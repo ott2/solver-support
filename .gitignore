@@ -1,0 +1,19 @@
+# python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.eggs/
+
+# testing / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# editors / os
+.DS_Store
+*.swp
+
+# commit-message scratch (see puzznic-support convention)
+.gitcommit.txt

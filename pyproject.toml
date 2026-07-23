@@ -1,0 +1,60 @@
+[build-system]
+requires = ["setuptools>=45", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "solver-support"
+version = "0.1.0"
+description = "Generic Conjure / Savile Row / Fast Downward / SymK / ENHSP / UPF solver pipeline"
+readme = "README.md"
+requires-python = ">=3.9"
+license = "BSD-3-Clause"
+authors = [
+    {name = "Andras Salamon"},
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = [
+    "psutil>=5.8.0",  # robust process management, timeouts, cleanup
+    "PyYAML>=5.4",    # model-registry loader (consumers supply their own yaml)
+]
+
+# Extras are populated during the physical extraction (Phase 3/4), when the
+# modules that need them (plotting, the UPF driver) actually move across.
+[project.optional-dependencies]
+plot = [
+    # pandas / matplotlib -- filled in when plot.py moves
+]
+upf = [
+    # up-fast-downward / up-enhsp / unified_planning fork pin -- filled in when
+    # upf_common.py / solver_upfplan.py move (see puzznic-support pyproject for
+    # the pinned revision and why bidict/ortools must be listed explicitly)
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=6.0",
+    "pytest-cov",
+    "pytest-mock",
+]
+
+[tool.setuptools]
+zip-safe = false
+
+[tool.setuptools.packages.find]
+include = ["solver_support*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+markers = [
+    "slow: marks tests as slow (may take more than a few seconds)",
+]
