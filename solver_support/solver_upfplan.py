@@ -1,16 +1,18 @@
 """
 UPF solver implementation - the single class behind every UPF-routed model.
 
-UpfPlanSolver drives the puzznic-upfplan CLI through run_phase, so it inherits the
-timeout/signal handling and SIGTERM summary generation every solver gets. It
-reaches a UPF engine by the two routes puzznic-upfplan supports, selected here by
-``build_mode``:
+UpfPlanSolver drives the consumer's UPF planner CLI through run_phase, so it
+inherits the timeout/signal handling and SIGTERM summary generation every solver
+gets. The CLI name is not baked in: the consumer supplies it (``upfplan_command=``
+or by overriding the ``UPFPLAN_COMMAND`` class attribute) - puzznic passes
+``puzznic-upfplan``. It reaches a UPF engine by the two routes that CLI supports,
+selected here by ``build_mode``:
 
   - build_mode is None (PDDL models, e.g. pddlnoaxiom): pass ``--domain`` so the
     CLI reads the PDDL through unified_planning's PDDLReader and solves with the
     engine chosen by the effective ``--tune`` (enhsp-opt / fast-downward / symk;
     see ModelRegistry.get_upf_engine). The same class therefore backs the upfenhsp,
-    upffd and upfsymk solvers. puzznic-upfplan streams that engine's progress live,
+    upffd and upfsymk solvers. The CLI streams that engine's progress live,
     so run_phase tees it to the terminal the way fd/symk do.
 
   - build_mode is 'upf'/'upflocal' (constructed models): pass ``--build`` so the
@@ -32,17 +34,23 @@ from .global_state import global_state
 
 
 class UpfPlanSolver(Solver):
-    """Solver that runs a Puzznic model through a UPF engine (PDDL or constructed)."""
+    """Solver that runs a model through a UPF engine (PDDL or constructed)."""
 
-    # CLI entry point that does the UPF PDDLReader/construction + OneshotPlanner solve.
-    UPFPLAN_COMMAND = "puzznic-upfplan"
+    # CLI entry point that does the UPF PDDLReader/construction + OneshotPlanner
+    # solve. No generic default (the CLI is consumer-provided); a consumer sets it
+    # per instance via ``upfplan_command=`` or by overriding this class attribute.
+    UPFPLAN_COMMAND: Optional[str] = None
 
     def __init__(self, solver_runner, solver_name: str = "upfenhsp",
-                 build_mode: Optional[str] = None):
+                 build_mode: Optional[str] = None,
+                 upfplan_command: Optional[str] = None):
         super().__init__(solver_runner)
         self.solver_name = solver_name
         # None -> read PDDL via --domain; 'upf'/'upflocal' -> construct via --build.
         self.build_mode = build_mode
+        # The consumer's UPF planner CLI (puzznic supplies 'puzznic-upfplan'); an
+        # explicit argument wins, else the class-attribute override, else unset.
+        self.upfplan_command = upfplan_command or self.UPFPLAN_COMMAND
 
     def _tune_fd_search(self, registry, tune, engine_name) -> Optional[str]:
         """FD search config for the active tune - only for fast-downward engines
@@ -71,6 +79,11 @@ class UpfPlanSolver(Solver):
         # savilerow's sat_args or the direct enhsp -planner (see get_upf_engine).
         # upfenhsp defaults to the metric-optimal engine so a plain run maximises the
         # score, matching the cost-optimal upffd/upfsymk; --tune satisficing opts out.
+        if not self.upfplan_command:
+            raise ValueError(
+                "no UPF planner command configured; pass upfplan_command= to "
+                "UpfPlanSolver or set its UPFPLAN_COMMAND to the consumer's UPF CLI")
+
         registry = global_state.model_registry
         tune = self._effective_tune()
 
@@ -84,7 +97,7 @@ class UpfPlanSolver(Solver):
             except Exception:
                 engine_name = None
             engine_name = engine_name or 'fast-downward'
-            cmd = [self.UPFPLAN_COMMAND, "--build", self.build_mode,
+            cmd = [self.upfplan_command, "--build", self.build_mode,
                    "-s", engine_name, str(param_file)]
             # For the fast-downward engine the tune also picks the FD search config
             # (upffd: optimal blind vs satisficing greedy); forward it so --build
@@ -109,7 +122,7 @@ class UpfPlanSolver(Solver):
             engine_name = engine_name or 'enhsp'
 
             cmd = [
-                self.UPFPLAN_COMMAND,
+                self.upfplan_command,
                 "--domain", str(model_path),
                 "--engine", engine_name,
             ]
@@ -124,9 +137,10 @@ class UpfPlanSolver(Solver):
             self.logger.info(f"Running UPF engine '{engine_name}'")
 
         # Forward debug so the upfplan subprocess's diagnostics (the compilation
-        # trace, the dumped compiled problem) print on its stderr under
-        # `puzznic-run -d` - where run_phase captures/tees them, and clear of the
-        # plan-only stdout the .solution is built from.
+        # trace, the dumped compiled problem) print on its stderr under the
+        # consumer's debug flag (e.g. `puzznic-run -d`) - where run_phase
+        # captures/tees them, and clear of the plan-only stdout the .solution is
+        # built from.
         if global_state.debug:
             cmd.append("--debug")
 

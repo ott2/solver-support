@@ -8,6 +8,25 @@ from datetime import datetime
 from typing import Optional
 from pathlib import Path
 
+# Logger name that warn() routes through. Defaults to the package logger so the
+# core is usable standalone; a consumer that configures its own named logger (with
+# file/console handlers) can point warn() at it via set_warn_logger_name() so these
+# warnings share the consumer's handlers. Read at call time, so wiring may happen
+# any time before the first warn().
+_warn_logger_name = 'solver_support'
+
+
+def set_warn_logger_name(name: str) -> None:
+    """Route warn() through the logger called ``name``.
+
+    Consumers call this once (e.g. at import) to funnel core warnings into their
+    own configured logger, preserving pre-extraction behaviour where warnings
+    reached the runner's log file/console handlers.
+    """
+    global _warn_logger_name
+    _warn_logger_name = name
+
+
 def warn(s, verbose_only: bool = False):
     """
     Print a warning message to stderr.
@@ -16,8 +35,8 @@ def warn(s, verbose_only: bool = False):
         s: Warning message
         verbose_only: If True, only print when verbose mode is enabled (but still logged to file)
     """
-    # Get the logger for proper structured logging
-    logger = logging.getLogger('puzznic_runner')
+    # Get the logger for proper structured logging (name is consumer-configurable)
+    logger = logging.getLogger(_warn_logger_name)
 
     if verbose_only:
         # Log at INFO level: will appear in log file but not console in non-verbose mode

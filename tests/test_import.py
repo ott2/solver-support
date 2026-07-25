@@ -63,3 +63,41 @@ def test_registry_loads_from_an_injected_config(tmp_path):
         assert "kissat" in reg.config.get("solvers", {})
     finally:
         mr.set_default_config_path(saved)
+
+
+def test_warn_logger_name_defaults_generic_and_is_settable():
+    """warn() routes through the package logger by default; a consumer can retarget
+    it (so its warnings share the consumer's configured handlers)."""
+    from solver_support import utilities
+
+    assert utilities._warn_logger_name == "solver_support"
+
+    saved = utilities._warn_logger_name
+    try:
+        utilities.set_warn_logger_name("my_consumer_runner")
+        assert utilities._warn_logger_name == "my_consumer_runner"
+    finally:
+        utilities.set_warn_logger_name(saved)
+
+
+def test_upfplan_command_is_consumer_injected():
+    """The core carries no UPF CLI name; it must be injected, else solve() refuses
+    rather than shelling out to a None-prefixed argv."""
+    from pathlib import Path
+    from unittest.mock import Mock
+    from solver_support.solver_upfplan import UpfPlanSolver
+
+    # No baked-in default: the class attribute is unset.
+    assert UpfPlanSolver.UPFPLAN_COMMAND is None
+
+    # An unconfigured solver refuses to build a command (the guard is the first
+    # thing solve() checks, before it touches any global state).
+    unset = UpfPlanSolver(Mock(), solver_name="upffd", build_mode="upf")
+    assert unset.upfplan_command is None
+    with pytest.raises(ValueError, match="no UPF planner command configured"):
+        unset.solve(Path("nonexistent"))
+
+    # A consumer-injected command is honoured.
+    wired = UpfPlanSolver(Mock(), solver_name="upffd", build_mode="upf",
+                          upfplan_command="my-upfplan")
+    assert wired.upfplan_command == "my-upfplan"
