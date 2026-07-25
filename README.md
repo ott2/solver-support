@@ -19,19 +19,27 @@ consumer supplies:
 
 ## status
 
-**Alpha / under construction.** This package is being extracted, module by
-module, from [`puzznic-support`](../puzznic), which is its first consumer and the
-origin of every module here. The extraction is deliberately staged so the
-originating test suite stays green throughout:
+**Alpha.** The core has been extracted, module by module, from
+[`puzznic-support`](../puzznic) — its first consumer and the origin of every
+module here — which now consumes this package. The extraction was staged so the
+originating test suite stayed green throughout:
 
-1. **decouple** the domain-scoring seams (in place, in puzznic-support);
-2. **split** mixed-concern files (in place);
+1. **decouple** the domain-scoring seams (in place, in puzznic-support); *done*
+2. **split** mixed-concern files (in place); *done*
 3. **extract** the now-clean core modules into this package and repoint
-   puzznic-support at them;
-4. **stand alone** — this package's own tests, docs, and install verification.
+   puzznic-support at them; *done*
+4. **stand alone** — this package's own tests, docs, and install verification;
+   *in progress*.
 
-Until the extraction lands, this is a scaffold: an installable but empty package
-reserving the name and layout.
+The pipeline modules now live here and are imported by puzznic-support. This
+package still knows nothing about any problem domain: it ships **unwired** and a
+consumer supplies its scoring, registry, logger and UPF CLI via injection.
+
+## usage
+
+See [`docs/injection-api.md`](docs/injection-api.md) for the injection points a
+consumer wires (model-registry paths, objective extraction, warning logger, UPF
+CLI) and a worked example of how puzznic-support wires them.
 
 ## development
 
@@ -40,6 +48,8 @@ Intended to be installed editable alongside its consumer into a shared venv:
 ```bash
 pip install -e /path/to/solver_support
 ```
+
+Run the core's own smoke tests with `pytest tests/`.
 
 ## licence
 
