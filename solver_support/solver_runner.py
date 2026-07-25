@@ -103,7 +103,7 @@ class SolverRunner:
         self.output_dir = output_dir or Path.cwd()
         
         # Track whether we created the output directory for cleanup purposes
-        self.created_output_dir = False  # PuzznicRunner handles directory creation
+        self.created_output_dir = False  # the higher-level runner handles directory creation
         
         # Create summary with directory information
         self.summary = create_run_summary(

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Model Registry for Puzznic solver configurations.
+Model Registry for solver configurations.
 
 This module provides a centralized registry for managing model files, solvers,
 and their configurations. It replaces the hard-coded model paths and logic
@@ -68,7 +68,7 @@ def set_user_config_finder(finder: Optional[Callable[[], Optional[Path]]]) -> No
 
 class ModelRegistry(CommandBuilderMixin):
     """
-    Registry for Puzznic models, solvers, and their configurations.
+    Registry for models, solvers, and their configurations.
     
     Provides a centralized way to:
     - Map model types to file paths

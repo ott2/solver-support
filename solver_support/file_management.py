@@ -62,8 +62,8 @@ def compute_options_label(tune=None, options=None) -> str:
     """Build the human-readable configuration label recorded in the summary.
 
     The readable sibling of :func:`compute_tune_slot`: it keeps the raw option
-    text (``O2``) instead of hashing it, so ``puzznic-plot --by-options`` and
-    ``puzznic-summary`` can fold runs into legible per-configuration series. The
+    text (``O2``) instead of hashing it, so downstream plotting and summary tools
+    can fold runs into legible per-configuration series. The
     label is the ``+``-join of the tune names and the dash-stripped options, or
     ``defopt`` when there is neither:
 

@@ -1,5 +1,5 @@
 """
-Horizon search utilities for Puzznic solving.
+Horizon search utilities.
 
 This module provides generic horizon-extending search functionality
 that can be used by different solver types (Savile Row, Conjure, etc.).

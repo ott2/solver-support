@@ -35,7 +35,7 @@ class PhaseResult:
 # stdout can still trip the generic solution-indicator parse in solver_stats
 # (e.g. the word "optimal" in a prob2any .param comment), which would otherwise
 # latch a spurious solution_found=True onto the run. Only solving phases may set
-# it. See docs/server-harness.md ("known puzznic-run summary imperfections").
+# it. (This is a known summary-generation imperfection.)
 _NON_SOLVING_PHASES = frozenset({"translation", "modelling", "visualisation"})
 
 # Best-effort post-processing phases. The runner runs these after a solution is

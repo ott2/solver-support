@@ -7,7 +7,7 @@ here, once at setup; each returns the value the core should record (already in t
 consumer's reported units) or None. Until a consumer registers one, every route
 yields None, so the standalone core simply records no score.
 
-Puzznic wires these from ``puzznic_support/__init__`` via
+For example, Puzznic wires these from ``puzznic_support/__init__`` via
 ``puzznic_scoring.wire_into_core()``, so every entry point and test that imports
 the package configures the core uniformly; another consumer of the extracted core
 would register its own.

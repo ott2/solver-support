@@ -50,7 +50,7 @@ _SOLUTION_FOUND_RE = re.compile(r'Solution found|Plan length: \d+ step|Best plan
 # 0.143s wall-clock]". The bracketed form is the translator summary; the plain
 # "... done!" progress lines don't match.
 _TRANSLATE_TIME_RE = re.compile(r'Done! \[[\d.]+s CPU, ([\d.]+)s wall-clock\]')
-# UPF's own model-transform (compilation) time, printed by puzznic-upfplan before
+# UPF's own model-transform (compilation) time, printed by the UPF CLI before
 # the engine runs - the analogue of Savile Row tailoring / Conjure refinement.
 _UP_COMPILE_TIME_RE = re.compile(r'UP compilation time: ([\d.]+)s')
 
@@ -231,7 +231,7 @@ class SolverStatsExtractor:
         expanded/evaluated counts, and the optimising cost-layers. Route-specific
         outcome fields (``solution_found`` / ``plan_length`` / ``score``) are left
         to the callers, which read them differently: the direct route from ENHSP's
-        own ``Problem Solved`` / ``Plan-Length``, the UPF route from puzznic-upfplan's
+        own ``Problem Solved`` / ``Plan-Length``, the UPF route from the UPF CLI's
         ``Steps:`` / ``Score:``. Safe to call on a Fast Downward / SymK engine log
         too - none of ENHSP's markers appear there, so it returns ``{}``.
         """
@@ -474,7 +474,7 @@ class SolverStatsExtractor:
         """
         Extract statistics from UPF (Unified Planning Framework) output.
 
-        The current UPF CLI (``puzznic-upfplan``) prints a found plan as
+        The UPF CLI prints a found plan as
         ``(action args)`` / ``Actions: [...]`` lines followed by a ``Steps: N``
         summary line (and ``Score: N`` on the scored constructed-build route); a
         no-plan run prints ``No plan found ...`` to stderr and exits non-zero.
@@ -535,7 +535,7 @@ class SolverStatsExtractor:
         if translate_match:
             stats['translate_time'] = float(translate_match.group(1))
         # UPF's model compilation (arrays/integers/usertype removal) that precedes
-        # the engine - recorded on stderr by puzznic-upfplan (constructed --build
+        # the engine - recorded on stderr by the UPF CLI (constructed --build
         # route only; --domain reads PDDL directly and has none).
         compile_match = _UP_COMPILE_TIME_RE.search(engine_log)
         if compile_match:
@@ -656,8 +656,8 @@ def detect_solver_from_command(command: List[str]) -> str:
         
     cmd_str = " ".join(command).lower()
 
-    # puzznic-upfplan is the UPF CLI; it must be detected BEFORE the engine-name
-    # checks below, because its command embeds the chosen engine (e.g.
+    # The UPF CLI (matched by the 'upfplan' substring) must be detected BEFORE the
+    # engine-name checks below, because its command embeds the chosen engine (e.g.
     # "-s fast-downward") which would otherwise misroute it to the fast-downward
     # extractor - one that does not understand upfplan's own plan format, so a
     # solved run would report solution_found=False / score=None.
