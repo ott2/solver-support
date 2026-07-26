@@ -29,7 +29,7 @@ originating test suite stayed green throughout:
 3. **extract** the now-clean core modules into this package and repoint
    puzznic-support at them; *done*
 4. **stand alone** — this package's own tests, docs, and install verification;
-   *in progress*.
+   *done*.
 
 The pipeline modules now live here and are imported by puzznic-support. This
 package still knows nothing about any problem domain: it ships **unwired** and a
@@ -41,6 +41,14 @@ See [`docs/injection-api.md`](docs/injection-api.md) for the injection points a
 consumer wires (model-registry paths, objective extraction, warning logger, UPF
 CLI) and a worked example of how puzznic-support wires them.
 
+## docs
+
+- [`injection-api.md`](docs/injection-api.md) — the four seams a consumer wires.
+- [`solver-runner.md`](docs/solver-runner.md) — running a solver as a
+  subprocess: `SolverResult`, timeout vs duration, phases.
+- [`timing-model.md`](docs/timing-model.md) — how solver timing is recorded, how
+  the backends map onto one shape, and the invariants parsers rely on.
+
 ## development
 
 Intended to be installed editable alongside its consumer into a shared venv:
@@ -49,7 +57,25 @@ Intended to be installed editable alongside its consumer into a shared venv:
 pip install -e /path/to/solver_support
 ```
 
-Run the core's own smoke tests with `pytest tests/`.
+## tests
+
+`pytest tests/` — the core's own suite, and the home for solver-level
+development. It runs against `solver_support` alone: no consumer need be
+installed, and none is imported.
+
+Since the core ships unwired, a test that needs a seam wired wires a stand-in
+(`tests/conftest.py`):
+
+| fixture | supplies |
+|---------|----------|
+| `fixture_registry` | a `ModelRegistry` over `tests/fixtures/models.yaml`, this suite's own synthetic config — never a consumer's |
+| `wired_stdout_score` | a consumer-style `Score: N` extractor, so a score reaches `solver_stats` |
+| `wired_timeout_score` | a consumer-style extractor for a salvaged timeout solution |
+
+Wiring a fixture config rather than mocking the registry keeps the real loader
+and accessors in the path. Anything a test needs from the registry goes in
+`tests/fixtures/models.yaml`, keeping its shape faithful to a real consumer
+config — that shape is the contract the loader implements.
 
 ## licence
 

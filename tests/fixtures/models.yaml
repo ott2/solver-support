@@ -1,0 +1,57 @@
+# Synthetic model registry for the core's own tests.
+#
+# The core ships without a registry -- a consumer injects the path to its own
+# models.yaml (see docs/injection-api.md). Tests that reach the registry wire
+# THIS file instead, so the core is exercised against a config it owns rather
+# than against whichever consumer happens to be installed beside it. Keep it
+# minimal: add only what a test actually reads, and keep the shape faithful to a
+# real consumer config (that shape is the contract the loader and the accessors
+# implement).
+
+models:
+  # A constructed UPF model: built in Python, solved through the UPF driver.
+  upf:
+    path: upf.py
+    solver: upffd
+    detection_type: upf
+    format-name: upf
+    proves-unsat: true
+    description: constructed UPF model, solved by Fast Downward via UPF
+
+  # An optimisation model whose objective is recorded in the solution file, so
+  # the horizon scan compares objectives between horizons.
+  scored:
+    path: models/Scored.eprime
+    solver: kissat
+    detection_type: scored
+    format-name: compact
+    objective-in-solution: true
+    description: optimisation model carrying its objective in the solution
+
+solvers:
+  upffd:
+    # Fast Downward through the Unified Planning Framework. The engine and the
+    # FD search config are BOTH resolved from the effective --tune, which is
+    # what UpfPlanSolver turns into `-s <engine>` and `--fd-search <search>`.
+    solver_type: upfplan
+    command: upfplan
+    extensions:
+      - .pddl
+    default_timeout: 600
+    engine_name: fast-downward
+    default_tune: optimal
+    tune:
+      optimal:
+        fd_search: "astar(blind())"
+        description: cost-optimal blind A*
+      satisficing:
+        fd_search: "lazy_greedy([ff()])"
+        description: satisficing greedy best-first with FF
+
+  kissat:
+    solver_type: savilerow
+    command: savilerow
+    extensions:
+      - .eprime
+    default_timeout: 600
+    description: SAT backend driven through Savile Row
