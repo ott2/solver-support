@@ -13,6 +13,7 @@ import subprocess
 import tempfile
 import signal
 import os
+import sys
 import time
 import json
 from pathlib import Path
@@ -352,9 +353,11 @@ class TestSolverRunnerIntegration:
     def test_python_command_execution(self):
         """Test executing Python commands."""
         runner = SolverRunner()
-        
-        # Test Python one-liner
-        result = runner.run(['python', '-c', 'print("hello from python")'])
+
+        # Test Python one-liner. Use sys.executable, not a bare 'python': modern
+        # macOS / Homebrew ships only python3 (no 'python' shim), so a hardcoded
+        # 'python' makes this an environment-dependent failure.
+        result = runner.run([sys.executable, '-c', 'print("hello from python")'])
         assert result.success
         assert 'hello from python' in result.stdout
 
