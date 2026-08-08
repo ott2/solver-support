@@ -5,11 +5,50 @@ These classes provide a machine-readable representation of puzzle solver runs,
 including timing information, success status, and solver-specific statistics.
 """
 
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field, asdict, fields
 from datetime import datetime
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple, Type
 import json
 from pathlib import Path
+
+
+# --- consumer-owned fields the core does not interpret ---
+#
+# The core owns the *shape* of a run record, but a consumer often has a datum
+# that belongs on the run and that the core has no concept of - a domain
+# cross-check, a provenance tag. Such a field must not be declared on the core's
+# dataclasses, or the "domain-agnostic" record grows a consumer's vocabulary (as
+# `canonical_score`, naming puzznic's replay scorer, once did). It goes in
+# ``extra`` instead.
+#
+# ``extra`` is *flattened* on the way out and re-gathered on the way in, so the
+# JSON is exactly as it would have been with a declared field. That keeps every
+# reader that indexes the saved summary by key working unchanged, and is what
+# makes moving a field into ``extra`` a no-op on disk. The gathering half also
+# means a summary written by a *different* consumer loads here instead of
+# raising TypeError on its unknown keys - which matters now more than one
+# consumer writes these files.
+
+
+def _flatten_extra(data: Dict[str, Any]) -> Dict[str, Any]:
+    """Fold ``extra`` up into the top level of a serialised record.
+
+    A core field always wins a name collision (``setdefault``), so a consumer
+    cannot shadow the record's own vocabulary - and a field later *removed* from
+    the core is transparently served from ``extra`` instead.
+    """
+    extra = data.pop('extra', None) or {}
+    for key, value in extra.items():
+        data.setdefault(key, value)
+    return data
+
+
+def _split_known(cls: Type, data: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    """Partition ``data`` into (keys declared on ``cls``, everything else)."""
+    known = {f.name for f in fields(cls)}
+    declared = {k: v for k, v in data.items() if k in known}
+    extra = {k: v for k, v in data.items() if k not in known}
+    return declared, extra
 
 
 @dataclass
@@ -35,10 +74,22 @@ class PhaseResult:
     returncode: Optional[int] = None        # Process return code (None if never launched)
     timed_out: bool = False                 # Killed for exceeding the timeout
     launch_failed: bool = False             # Executable could not be started
+    # Consumer-owned per-phase fields the core does not interpret. Most phase
+    # extras belong in `solver_stats` (that is what it is for); this is for a
+    # datum that is about the phase itself rather than about the solver's run.
+    extra: Dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
-        """Convert to dictionary for JSON serialization."""
-        return asdict(self)
+        """Convert to dictionary for JSON serialization (``extra`` flattened in)."""
+        return _flatten_extra(asdict(self))
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'PhaseResult':
+        """Build from a serialised phase, gathering unknown keys into ``extra``."""
+        declared, extra = _split_known(cls, data)
+        phase = cls(**declared)
+        phase.extra.update(extra)
+        return phase
 
 
 # Phases that translate / model / visualise never "find a solution". Their
@@ -91,6 +142,12 @@ class RunSummary:
     stopat: Optional[int] = None            # Highest horizon tried, if the default cap (100) was overridden
     objbound: Optional[int] = None          # Objective bound constraint for optimization models (if specified)
     phases: List[PhaseResult] = field(default_factory=list)  # Individual phase results
+    # Consumer-owned fields the core does not interpret, flattened into the saved
+    # JSON so they are indistinguishable on disk from a declared field. This is
+    # where a domain datum belongs - e.g. puzznic's `canonical_score`, the score
+    # of a replay of the solution, which cross-checks the solver-reported `score`
+    # and which the core has no way to compute or interpret.
+    extra: Dict[str, Any] = field(default_factory=dict)
     
     def add_phase(self, phase: PhaseResult) -> None:
         """Add a phase result and update summary statistics."""
@@ -181,7 +238,14 @@ class RunSummary:
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for JSON serialization."""
         data = asdict(self)
-        
+
+        # Consumer-owned fields sit at the top level, exactly where a declared
+        # field would be, so moving a field into `extra` does not change the
+        # file. Phases get the same treatment (asdict has already flattened them
+        # to plain dicts, `extra` key and all).
+        data = _flatten_extra(data)
+        data['phases'] = [_flatten_extra(p) for p in data['phases']]
+
         # Convert datetime objects to ISO format strings
         if data['start_time']:
             data['start_time'] = self.start_time.isoformat()
@@ -220,21 +284,28 @@ class RunSummary:
     
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'RunSummary':
-        """Create RunSummary from dictionary."""
+        """Create RunSummary from dictionary.
+
+        Keys the core does not declare are gathered into ``extra`` rather than
+        rejected, so a summary written by another consumer - or by a later
+        version that added a field - loads here instead of raising TypeError.
+        """
         # Make a copy to avoid modifying the original data
         data = data.copy()
-        
+
         # Convert datetime strings back to datetime objects
         if data.get('start_time'):
             data['start_time'] = datetime.fromisoformat(data['start_time'])
         if data.get('end_time'):
             data['end_time'] = datetime.fromisoformat(data['end_time'])
-        
+
         # Convert phase dictionaries to PhaseResult objects
         phases_data = data.pop('phases', [])
-        phases = [PhaseResult(**phase_data) for phase_data in phases_data]
-        
-        summary = cls(**data)
+        phases = [PhaseResult.from_dict(phase_data) for phase_data in phases_data]
+
+        declared, extra = _split_known(cls, data)
+        summary = cls(**declared)
+        summary.extra.update(extra)
         summary.phases = phases
         return summary
     

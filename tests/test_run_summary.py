@@ -579,3 +579,80 @@ class TestCanonicalScore:
         assert "canonical_score" not in s.to_dict()
         # And an old summary without the key still loads.
         assert RunSummary.from_json(s.to_json()).canonical_score is None
+
+
+class TestConsumerOwnedFields:
+    """The ``extra`` bag: consumer fields the core does not interpret.
+
+    The core owns the record's shape, but a consumer may have a datum that
+    belongs on the run and that the core has no concept of. Declaring such a
+    field here would grow a consumer's vocabulary into a domain-agnostic record;
+    ``extra`` is where it goes instead.
+    """
+
+    def test_extra_is_flattened_into_the_saved_json(self):
+        """On disk it is indistinguishable from a declared field.
+
+        This is what makes moving a field into ``extra`` a no-op for every
+        reader that indexes a saved summary by key.
+        """
+        s = RunSummary(instance="i", model="demo", solver="kissat")
+        s.extra['replay_score'] = 1500
+
+        data = s.to_dict()
+
+        assert data['replay_score'] == 1500
+        assert 'extra' not in data
+
+    def test_empty_extra_adds_nothing(self):
+        s = RunSummary(instance="i", model="demo", solver="kissat")
+        assert 'extra' not in s.to_dict()
+
+    def test_unknown_keys_are_gathered_rather_than_rejected(self):
+        """A summary written by another consumer must load, not raise.
+
+        Before ``extra``, from_dict was ``cls(**data)``, so any key the core did
+        not declare raised TypeError - meaning one consumer could not read
+        another's summary at all.
+        """
+        summary = RunSummary.from_dict({
+            'instance': 'i',
+            'model': 'demo',
+            'replay_score': 1500,
+            'some_other_consumers_field': 'whatever',
+        })
+
+        assert summary.instance == 'i'
+        assert summary.extra['replay_score'] == 1500
+        assert summary.extra['some_other_consumers_field'] == 'whatever'
+
+    def test_extra_round_trips_through_json(self):
+        s = RunSummary(instance="i", model="demo", solver="kissat")
+        s.extra['replay_score'] = 1500
+
+        back = RunSummary.from_json(s.to_json())
+
+        assert back.extra['replay_score'] == 1500
+
+    def test_a_core_field_wins_a_name_collision(self):
+        """A consumer cannot shadow the record's own vocabulary."""
+        s = RunSummary(instance="i", model="demo", solver="kissat")
+        s.score = 100
+        s.extra['score'] = 999
+
+        assert s.to_dict()['score'] == 100
+
+    def test_phase_extra_flattens_and_gathers_too(self):
+        """Phases carry the same contract (most phase extras belong in
+        solver_stats, but the record must not reject an unknown phase key)."""
+        s = RunSummary(instance="i", model="demo", solver="kissat")
+        phase = PhaseResult(name="solving", duration=1.0, success=True)
+        phase.extra['replayed'] = True
+        s.phases.append(phase)
+
+        data = s.to_dict()
+        assert data['phases'][0]['replayed'] is True
+        assert 'extra' not in data['phases'][0]
+
+        back = RunSummary.from_dict(data)
+        assert back.phases[0].extra['replayed'] is True
