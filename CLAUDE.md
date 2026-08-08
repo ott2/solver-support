@@ -127,6 +127,17 @@ non-solving phases (`translation`, `modelling`, `visualisation`) may not set
 `solution_found`. `hlim` (horizon budget exhausted) is deliberately distinct from a
 planner's proven unsat: a bounded CP model *cannot* prove unsatisfiability.
 
+**Consumer-owned data goes in `extra`, never a declared field.** `RunSummary` and
+`PhaseResult` each carry an `extra` dict for data the core cannot interpret. Declaring
+such a field would grow a consumer's vocabulary into a domain-agnostic record — which
+is what `canonical_score` (puzznic's replay scorer) did before it was removed. `extra`
+is *flattened* into the serialised form and re-gathered on load, so the JSON is
+identical to what a declared field produced and readers that index a saved summary by
+key are unaffected. A core field wins a name collision. The gathering half also means
+`from_dict` no longer raises `TypeError` on a key it doesn't know, so one consumer can
+read another's summaries. For per-phase data, prefer `solver_stats` — that is what it
+is for; `PhaseResult.extra` is for data about the phase rather than the solver run.
+
 **Failure kinds are distinguished on purpose.** `SolverResult.failed` covers three
 different outcomes — check `timed_out`, `interrupted`, and `launch_failed` before
 treating a run as a genuine solver failure. A timed-out anytime solver may have banked
