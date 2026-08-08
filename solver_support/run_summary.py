@@ -25,6 +25,16 @@ class PhaseResult:
     peak_memory_kb: Optional[int] = None    # Peak memory usage in KB
     solver_stats: Dict[str, Any] = field(default_factory=dict)  # Solver-specific statistics
     warnings: List[str] = field(default_factory=list)  # Warning messages from stderr
+    # Why the phase ended, kept alongside the bare `success` flag so the outcome
+    # can be reconstructed from a saved summary. `success` conflates the three
+    # failure kinds SolverResult distinguishes, and the distinction matters to a
+    # reader of the JSON: a timed-out baseline is a result, whereas a launch
+    # failure (missing / non-executable binary) is an infrastructure error that
+    # aborts a horizon scan. None/False means "not recorded" - phases built by
+    # hand, or by the error path of run_phase, leave them at their defaults.
+    returncode: Optional[int] = None        # Process return code (None if never launched)
+    timed_out: bool = False                 # Killed for exceeding the timeout
+    launch_failed: bool = False             # Executable could not be started
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary for JSON serialization."""

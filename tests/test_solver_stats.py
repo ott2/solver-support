@@ -145,6 +145,65 @@ class TestSavileRowInfoTimes:
         assert SolverStatsExtractor.extract_savilerow_info_times(info) == {
             'solver_time': 2.0}
 
+    def test_times_are_floats_even_when_the_file_has_integers(self, tmp_path):
+        """The two totals feed a float timing model, whatever the file says."""
+        info = self._write_info(
+            tmp_path, "SavileRowTotalTime:9\nSolverTotalTime:21\n")
+        times = SolverStatsExtractor.extract_savilerow_info_times(info)
+        assert times == {'savilerow_time': 9.0, 'solver_time': 21.0}
+        assert all(isinstance(v, float) for v in times.values())
+
+
+class TestSavileRowInfo:
+    """The full ``.info`` view: every Key:Value pair, keys verbatim.
+
+    The two totals are what the core's timing model needs; a consumer's run
+    report may want the encoding size and search counters that sit in the same
+    file, so this returns the lot rather than a curated subset.
+    """
+
+    def _write_info(self, tmp_path, body):
+        p = tmp_path / "run.param.info"
+        p.write_text(body)
+        return p
+
+    def test_all_keys_returned_with_values_coerced(self, tmp_path):
+        info = self._write_info(
+            tmp_path,
+            "SolverMemOut:0\n"
+            "SolverTotalTime:21.72\n"
+            "SATVars:12345\n"
+            "SATClauses:678901\n"
+            "SolverNodes:655835\n"
+            "SolverSatisfiable:1\n"
+            "SavileRowTotalTime:9.779\n")
+
+        assert SolverStatsExtractor.extract_savilerow_info(info) == {
+            'SolverMemOut': 0,
+            'SolverTotalTime': 21.72,
+            'SATVars': 12345,
+            'SATClauses': 678901,
+            'SolverNodes': 655835,
+            'SolverSatisfiable': 1,
+            'SavileRowTotalTime': 9.779,
+        }
+
+    def test_non_numeric_value_kept_as_text(self, tmp_path):
+        """Coercion is best-effort: an unparseable value is not dropped here."""
+        info = self._write_info(tmp_path, "SolverStatus:NA\n")
+        assert SolverStatsExtractor.extract_savilerow_info(info) == {
+            'SolverStatus': 'NA'}
+
+    def test_lines_without_a_separator_are_skipped(self, tmp_path):
+        info = self._write_info(tmp_path, "garbage line\nSATVars:7\n\n")
+        assert SolverStatsExtractor.extract_savilerow_info(info) == {'SATVars': 7}
+
+    def test_missing_file_returns_empty(self, tmp_path):
+        # Same best-effort contract as the times wrapper: a hard timeout can
+        # kill Savile Row before it writes the file.
+        assert SolverStatsExtractor.extract_savilerow_info(
+            tmp_path / "nope.info") == {}
+
 
 _FD_LAYER_OUTPUT = """\
 Done! [0.160s CPU, 0.143s wall-clock]

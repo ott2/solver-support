@@ -93,6 +93,51 @@ class TestPhaseResult:
         assert result_dict['peak_memory_kb'] == 1024
         assert result_dict['solver_stats'] == {'horizon_number': 1}
 
+    def test_phase_result_outcome_fields_default_to_unrecorded(self):
+        """A hand-built phase says nothing about how a process ended."""
+        phase = PhaseResult(name="solving")
+
+        assert phase.returncode is None
+        assert phase.timed_out is False
+        assert phase.launch_failed is False
+
+    def test_phase_result_outcome_fields_round_trip(self):
+        """The outcome survives a save/load, so a reader of the JSON can tell a
+        timeout from a solver that ran and failed."""
+        phase = PhaseResult(
+            name="solving",
+            command=["savilerow", "model.eprime"],
+            success=False,
+            returncode=-1,
+            timed_out=True,
+        )
+
+        restored = PhaseResult(**phase.to_dict())
+
+        assert restored.returncode == -1
+        assert restored.timed_out is True
+        assert restored.launch_failed is False
+
+    def test_phase_result_loads_a_summary_written_before_these_fields(self):
+        """Older summaries have no outcome keys at all; they must still load."""
+        legacy = {
+            'name': 'solving',
+            'command': ['savilerow', 'model.eprime'],
+            'duration': 10.0,
+            'success': True,
+            'output_files': [],
+            'error_message': '',
+            'peak_memory_kb': None,
+            'solver_stats': {},
+            'warnings': [],
+        }
+
+        phase = PhaseResult(**legacy)
+
+        assert phase.success is True
+        assert phase.returncode is None
+        assert phase.timed_out is False
+
 
 class TestRunSummary:
     """Test the RunSummary dataclass."""

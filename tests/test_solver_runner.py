@@ -758,5 +758,113 @@ Peak memory: 34136572 KB
         assert phase.solver_stats['peak_memory_kb'] == 1234567
 
 
+class TestSolverRunnerOutcomeReporting:
+    """How a run's outcome is logged and recorded.
+
+    ``SolverResult.failed`` conflates three outcomes, and only one of them is a
+    solver failure (see the note in docs/solver-runner.md). These pin that
+    distinction where it is user-visible: the log, and the persisted phase.
+    """
+
+    def test_timeout_is_not_logged_as_a_failure(self):
+        """A timeout is an expected result, not an error.
+
+        A consumer whose timed-out baseline IS the measurement should not have
+        every such row shout [ERROR] Command failed at it.
+        """
+        runner = SolverRunner(timeout=1)
+
+        with patch.object(runner, 'logger') as mock_logger:
+            result = runner.run(['sleep', '5'])
+
+            assert result.timed_out
+            errors = [c[0][0] for c in mock_logger.error.call_args_list]
+            assert not any('Command failed' in e for e in errors)
+            infos = [c[0][0] for c in mock_logger.info.call_args_list]
+            assert any('did not complete' in i for i in infos)
+
+    def test_genuine_failure_still_logs_an_error(self):
+        """A solver that ran and exited non-zero is still an error."""
+        runner = SolverRunner()
+
+        with patch.object(runner, 'logger') as mock_logger:
+            result = runner.run(['sh', '-c', 'exit 3'])
+
+            assert result.failed and not result.timed_out
+            errors = [c[0][0] for c in mock_logger.error.call_args_list]
+            assert any('Command failed' in e for e in errors)
+
+    def test_log_level_argument_overrides_global_state(self):
+        """A consumer can quieten a runner; global_state can only raise verbosity."""
+        import logging
+
+        quiet = SolverRunner(log_level=logging.CRITICAL)
+        console = quiet.logger.handlers[0]
+        assert console.level == logging.CRITICAL
+
+        # Unset keeps the global behaviour (which floors at WARNING).
+        default = SolverRunner()
+        assert default.logger.handlers[0].level == global_state.log_level()
+
+    def test_run_phase_records_the_outcome_of_a_clean_run(self):
+        runner = SolverRunner()
+        runner.run_phase('solving', ['echo', 'done'])
+
+        phase = runner.summary.get_phase('solving')
+        assert phase.returncode == 0
+        assert phase.timed_out is False
+        assert phase.launch_failed is False
+
+    def test_run_phase_records_a_timeout(self):
+        runner = SolverRunner(timeout=1)
+        runner.run_phase('solving', ['sleep', '5'])
+
+        phase = runner.summary.get_phase('solving')
+        assert phase.timed_out is True
+        assert phase.success is False
+        # The pre-existing solver_stats flag stays put: consumers read it.
+        assert phase.solver_stats['timed_out'] is True
+
+    def test_run_phase_records_a_launch_failure(self):
+        """A missing binary is distinguishable from a solver that ran and failed.
+
+        It is the one outcome that aborts a horizon scan
+        (SolverExecutableError), so it must survive into the saved summary.
+        """
+        runner = SolverRunner()
+        runner.run_phase('solving', ['no-such-solver-binary-zzz'])
+
+        phase = runner.summary.get_phase('solving')
+        assert phase.launch_failed is True
+        assert phase.timed_out is False
+        assert phase.success is False
+
+
+class TestSolverRunnerWorkingDirectory:
+    """The optional per-subprocess working directory."""
+
+    def test_cwd_runs_the_subprocess_elsewhere(self, tmp_path):
+        """A consumer can place a subprocess without chdir'ing the whole process."""
+        runner = SolverRunner()
+        result = runner.run(['pwd'], cwd=tmp_path)
+
+        assert result.success
+        assert Path(result.stdout.strip()).resolve() == tmp_path.resolve()
+
+    def test_cwd_defaults_to_the_callers_directory(self):
+        """Omitting cwd keeps the documented behaviour the solvers rely on."""
+        runner = SolverRunner()
+        result = runner.run(['pwd'])
+
+        assert result.success
+        assert Path(result.stdout.strip()).resolve() == Path.cwd().resolve()
+
+    def test_run_phase_forwards_cwd(self, tmp_path):
+        runner = SolverRunner()
+        result = runner.run_phase('solving', ['pwd'], cwd=tmp_path)
+
+        assert Path(result.stdout.strip()).resolve() == tmp_path.resolve()
+
+
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])

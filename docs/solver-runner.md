@@ -62,6 +62,16 @@ cares which: check `timed_out` and `interrupted` before treating a run as a
 genuine solver failure. A timed-out anytime solver may still have banked a
 solution worth keeping.
 
+The runner applies that rule to its own logging: a timeout or an interrupt is
+recorded at INFO (`Command did not complete`), and only a solver that ran and
+exited non-zero is logged as `Command failed` at ERROR. A launch failure logs its
+own error before returning. So a consumer whose timed-out run *is* the result -
+a benchmark baseline, say - gets no spurious error rows.
+
+`run_phase` carries the same distinction into the persisted summary: the phase
+records `returncode`, `timed_out` and `launch_failed` alongside `success`, so the
+outcome can be reconstructed from a saved run without re-reading the log.
+
 - `__str__()` renders `SolverResult({command}) -> {STATUS} (rc={returncode},
   t={duration}s)` with `STATUS` one of `SUCCESS` / `FAILED` / `TIMEOUT` /
   `INTERRUPTED`:
@@ -99,6 +109,17 @@ Two variants of the same call:
 - `run_simple(*command_parts)` — the terse variant, returning `result.failed`
   (truthy on failure) for call sites that only branch on success and want no
   phase recorded.
+
+Two optional controls, both defaulting to the historical behaviour:
+
+- `cwd=` on `run` / `run_phase` — the subprocess's working directory. Omitted, it
+  inherits the caller's, which is what the `Solver` classes rely on (they are
+  documented to run after a chdir, with paths relative to it). A consumer that
+  would rather not chdir a whole process can place each subprocess instead.
+- `log_level=` on the `SolverRunner` constructor — console verbosity for this
+  runner. `global_state.log_level()` can only ever *raise* verbosity (it floors
+  at WARNING), so this is the way to make a runner quieter. The file handler
+  captures everything regardless.
 
 ## tests
 

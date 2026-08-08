@@ -343,12 +343,59 @@ class SolverStatsExtractor:
         return stats
     
     @staticmethod
+    def extract_savilerow_info(info_path) -> Dict[str, Any]:
+        """Parse every ``Key:Value`` pair from a Savile Row ``.info`` stats file.
+
+        Savile Row writes ``<param>.info`` alongside each run: labelled
+        ``Key:Value`` lines carrying not just the two totals
+        (``SavileRowTotalTime`` / ``SolverTotalTime``, see
+        :meth:`extract_savilerow_info_times`) but the encoding and search
+        measurements a report may want to column up - ``SATVars``,
+        ``SATClauses``, ``SolverNodes``, ``SolverSatisfiable``, and whatever else
+        the running Savile Row emits. Keys are returned **verbatim**, so this
+        stays a faithful view of the file rather than a curated subset that has
+        to grow every time a consumer wants one more field.
+
+        Values are coerced to ``int`` where they look like one, else ``float``,
+        else left as the stripped string, so a caller can use them numerically
+        without re-parsing. Lines with no ``:`` are skipped. Returns ``{}`` when
+        the file does not exist or cannot be read - a hard timeout can kill
+        Savile Row before it writes the file, and older runs may have had it
+        cleaned up.
+        """
+        info_path = Path(info_path)
+        if not info_path.exists():
+            return {}
+
+        try:
+            text = info_path.read_text()
+        except OSError:
+            return {}
+
+        info: Dict[str, Any] = {}
+        for line in text.splitlines():
+            key, sep, value = line.partition(':')
+            if not sep:
+                continue
+            key = key.strip()
+            if not key:
+                continue
+            value = value.strip()
+            try:
+                info[key] = int(value)
+            except ValueError:
+                try:
+                    info[key] = float(value)
+                except ValueError:
+                    info[key] = value
+        return info
+
+    @staticmethod
     def extract_savilerow_info_times(info_path) -> Dict[str, Any]:
         """Parse a Savile Row ``.info`` stats file for the tailoring/solver split.
 
-        Savile Row writes ``<param>.info`` alongside each run: labelled
-        ``Key:Value`` lines that include ``SavileRowTotalTime`` (time spent
-        tailoring the model - flattening, CSE, SAT encoding) and
+        The two totals the phase model cares about: ``SavileRowTotalTime`` (time
+        spent tailoring the model - flattening, CSE, SAT encoding) and
         ``SolverTotalTime`` (time the backend solver itself ran). The phase
         ``duration`` we already record is the wall-clock total (these two plus
         runsolver/process overhead), and the split between them is neither fixed
@@ -356,35 +403,26 @@ class SolverStatsExtractor:
         report and plot them separately.
 
         Returns a dict with ``savilerow_time`` and/or ``solver_time`` (floats),
-        omitting either key that is absent or unparseable. Returns ``{}`` when
-        the file does not exist - a hard timeout can kill Savile Row before it
-        writes the file, and older runs may have had it cleaned up.
+        omitting either key that is absent or unparseable, and ``{}`` when the
+        file is missing. A caller that wants the rest of the file (SAT encoding
+        size, solver nodes, ...) uses :meth:`extract_savilerow_info`, of which
+        this is a renaming subset.
         """
-        info_path = Path(info_path)
-        if not info_path.exists():
-            return {}
+        info = SolverStatsExtractor.extract_savilerow_info(info_path)
 
-        # Only these two labelled times are of interest; other lines
-        # (SATClauses, SolverNodes, ...) are ignored.
         key_map = {
             'SavileRowTotalTime': 'savilerow_time',
             'SolverTotalTime': 'solver_time',
         }
         stats: Dict[str, Any] = {}
-        try:
-            text = info_path.read_text()
-        except OSError:
-            return {}
-        for line in text.splitlines():
-            key, sep, value = line.partition(':')
-            if not sep:
-                continue
-            out_key = key_map.get(key.strip())
-            if out_key is None:
+        for src, dst in key_map.items():
+            if src not in info:
                 continue
             try:
-                stats[out_key] = float(value.strip())
-            except ValueError:
+                # Always a float, whatever the file's integer-ness: these feed a
+                # timing model whose other components are floats.
+                stats[dst] = float(info[src])
+            except (TypeError, ValueError):
                 continue
         return stats
 

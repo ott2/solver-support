@@ -75,6 +75,13 @@ fields. All times are seconds unless noted.
   (tailoring) → `savilerow_time` and `SolverTotalTime` (backend search) →
   `solver_time`, attaching them to the matching phase. Recorded for *every*
   horizon, so intermediate UNSAT horizons carry the split too.
+- **The rest of the file**: those two are what the phase model needs, but the
+  same `.info` carries the encoding size and search counters (`SATVars`,
+  `SATClauses`, `SolverNodes`, `SolverSatisfiable`, ...).
+  `SolverStatsExtractor.extract_savilerow_info(path)` returns every `Key:Value`
+  pair with keys verbatim and values coerced to int/float, for a consumer
+  reporting those columns; `extract_savilerow_info_times` is the renaming subset
+  of it that the core itself uses.
 - **Best-effort**: a hard timeout can kill Savile Row before it writes `.info`,
   leaving the split absent (`None`).
 

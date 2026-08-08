@@ -94,9 +94,17 @@ class SolverRunner:
                  model: str = "",
                  solver: str = "",
                  timestamp: str = None,
-                 output_dir: Optional[Path] = None):
+                 output_dir: Optional[Path] = None,
+                 log_level: Optional[int] = None):
         self.log_file = log_file
         self.timeout = timeout
+        # Console verbosity for this runner's logger. ``global_state`` can only
+        # ever *raise* verbosity (its log_level() floors at WARNING), so a
+        # consumer that wants a quieter runner - e.g. a benchmark harness where
+        # a timed-out row is an ordinary result - passes an explicit level here.
+        # None keeps the global behaviour. The file handler always captures
+        # everything regardless.
+        self.log_level = log_level
         self.logger = self._setup_logger()
         self.summary_file = summary_file
         # Output directory should already exist and we should already be in it
@@ -114,7 +122,8 @@ class SolverRunner:
     
     def _setup_logger(self) -> logging.Logger:
         """Set up logging to both console and file if specified."""
-        return setup_logger(f'solver_runner_{id(self)}', log_file=self.log_file, log_level=global_state.log_level())
+        level = self.log_level if self.log_level is not None else global_state.log_level()
+        return setup_logger(f'solver_runner_{id(self)}', log_file=self.log_file, log_level=level)
     
     def cleanup_output_dir(self) -> None:
         """Clean up output directory if it's empty and we created it."""
@@ -172,16 +181,22 @@ class SolverRunner:
             timeout: Optional[int] = None,
             env: Optional[Dict[str, str]] = None,
             phase_name: Optional[str] = None,
-            stream_output: bool = True) -> SolverResult:
+            stream_output: bool = True,
+            cwd: Optional[Path] = None) -> SolverResult:
         """
         Run a command with robust error handling and logging.
-        
+
         Args:
             command: Command and arguments to run
             timeout: Timeout in seconds (uses instance timeout if None)
             env: Environment variables for the command
             phase_name: "translation", "solving", "visualisation"
-            
+            cwd: Working directory for the subprocess. None (the default) keeps
+                the caller's own working directory, which is what the solver
+                classes rely on - they are documented to run after a chdir and
+                to use paths relative to it. A consumer that would rather not
+                chdir a whole process can instead point each subprocess here.
+
         Returns:
             SolverResult containing execution details
         """
@@ -214,7 +229,7 @@ class SolverRunner:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
-                cwd=None,
+                cwd=str(cwd) if cwd is not None else None,
                 env=run_env,
                 preexec_fn=os.setsid if hasattr(os, 'setsid') else None
             )
@@ -444,7 +459,17 @@ class SolverRunner:
         # Log the result
         self.logger.info(f"Command completed in {duration:.2f}s with return code {returncode}")
         
-        if result.failed:
+        # `failed` covers three different outcomes and only one of them is a
+        # solver failure. A timeout or an interrupt is an expected result the
+        # caller decides the meaning of - an anytime solver may have banked a
+        # solution worth keeping, and a benchmark's timed-out baseline IS the
+        # result - so neither is logged as an error here. Both are already
+        # reported at WARNING where they are detected (and a launch failure
+        # logs its own error before returning early), so this only records the
+        # completed result.
+        if result.timed_out or result.interrupted:
+            self.logger.info(f"Command did not complete: {result}")
+        elif result.failed:
             self.logger.error(f"Command failed: {result}")
         
         # Log stderr (always, not just on failure)
@@ -491,7 +516,8 @@ class SolverRunner:
             expected_outputs: List of files expected to be created by this phase
             horizon_number: The horizon number being attempted (for horizon phases)
             **kwargs: Additional arguments passed to SolverRunner.run()
-            
+                (timeout, env, stream_output, cwd)
+
         Returns:
             SolverResult containing execution details
         """
@@ -508,9 +534,14 @@ class SolverRunner:
             # Execute the command using existing run method
             result = self.run(command, phase_name=phase_name, **kwargs)
             
-            # Update phase with results
+            # Update phase with results. The outcome fields are recorded
+            # alongside `success` so a saved summary can tell a timeout or a
+            # missing binary from a solver that ran and failed.
             phase.duration = result.duration
             phase.success = result.success
+            phase.returncode = result.returncode
+            phase.timed_out = result.timed_out
+            phase.launch_failed = result.launch_failed
             phase.error_message = result.stderr if result.failed else ""
             
             # Extract warnings from stderr
