@@ -137,7 +137,6 @@ class RunSummary:
     solution_found: bool = False            # Whether solution was found
     final_status: str = ""                  # Final status message
     score: Optional[int] = None             # Total score the model reported (scored/upf models only)
-    canonical_score: Optional[int] = None   # Replay-derived score (simulator.score_match_rounds), for cross-checking `score`
     startat: Optional[int] = None           # Starting horizon for Savile Row models (if specified)
     stopat: Optional[int] = None            # Highest horizon tried, if the default cap (100) was overridden
     objbound: Optional[int] = None          # Objective bound constraint for optimization models (if specified)
@@ -268,10 +267,9 @@ class RunSummary:
             del data['stopat']
         if data.get('objbound') is None:
             del data['objbound']
-        # Only record canonical_score when we actually computed one
-        if data.get('canonical_score') is None:
-            del data['canonical_score']
-            
+        # Consumer fields need no such pruning: `extra` holds only what a
+        # consumer actually put there, so an uncomputed one is simply absent.
+
         return data
     
     def to_json(self, indent: int = 2) -> str:

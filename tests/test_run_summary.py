@@ -557,30 +557,6 @@ class TestUtilityFunctions:
         assert len(phase.command) == 3  # Should not be affected
 
 
-class TestCanonicalScore:
-    """The replay-derived canonical_score field.
-
-    The core only carries the field (a consumer computes it and decides how to
-    display it), so what is pinned here is that it round-trips and stays out of
-    the JSON when unset.
-    """
-
-    def test_canonical_score_round_trips(self):
-        s = RunSummary(instance="i", model="upf", solver="upf")
-        s.score = 1700
-        s.canonical_score = 1700
-        back = RunSummary.from_json(s.to_json())
-        assert back.score == 1700
-        assert back.canonical_score == 1700
-
-    def test_canonical_score_dropped_when_none(self):
-        s = RunSummary(instance="i", model="essence", solver="conjure")
-        # Not computed -> must not clutter the summary JSON.
-        assert "canonical_score" not in s.to_dict()
-        # And an old summary without the key still loads.
-        assert RunSummary.from_json(s.to_json()).canonical_score is None
-
-
 class TestConsumerOwnedFields:
     """The ``extra`` bag: consumer fields the core does not interpret.
 
@@ -641,6 +617,27 @@ class TestConsumerOwnedFields:
         s.extra['score'] = 999
 
         assert s.to_dict()['score'] == 100
+
+    def test_a_summary_written_before_the_field_moved_still_loads(self):
+        """`canonical_score` used to be declared on RunSummary; it is a puzznic
+        concept (a replay of the solution, re-scored) that this package can
+        neither compute nor interpret, so it moved into `extra`.
+
+        Every `.summary` file already on disk carries it at the top level, and
+        so does every summary a consumer writes today - the flattening means
+        those are the same thing. What must not happen is the load raising.
+        """
+        summary = RunSummary.from_dict({
+            'instance': '5x7-ps1-a13',
+            'model': 'upf',
+            'score': 1700,
+            'canonical_score': 1500,
+        })
+
+        assert summary.score == 1700                        # core field
+        assert summary.extra['canonical_score'] == 1500     # consumer field
+        # And it goes back out where it came from.
+        assert summary.to_dict()['canonical_score'] == 1500
 
     def test_phase_extra_flattens_and_gathers_too(self):
         """Phases carry the same contract (most phase extras belong in
