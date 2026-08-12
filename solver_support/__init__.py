@@ -3,9 +3,9 @@
 Domain-agnostic infrastructure for driving a Conjure / Savile Row / Fast Downward
 / SymK / ENHSP / UPF pipeline: spawn solvers, manage phases and timeouts, name
 files, parse solver output into timing / cost-layer stats, and run a horizon
-loop.  A consumer (such as puzznic-support) supplies its own model registry and
-plugs its domain scoring in via injection; this package knows nothing about any
-particular puzzle or objective.
+loop.  A consumer supplies its own model registry and plugs its domain scoring
+in via injection; this package knows nothing about any particular problem or
+objective.
 
 The core ships *unwired*: no objective extractor is registered and the registry
 has no default config path, so a bare ``import solver_support`` yields an

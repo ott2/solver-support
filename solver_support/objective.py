@@ -7,10 +7,10 @@ here, once at setup; each returns the value the core should record (already in t
 consumer's reported units) or None. Until a consumer registers one, every route
 yields None, so the standalone core simply records no score.
 
-For example, Puzznic wires these from ``puzznic_support/__init__`` via
-``puzznic_scoring.wire_into_core()``, so every entry point and test that imports
-the package configures the core uniformly; another consumer of the extracted core
-would register its own.
+A consumer typically groups these registrations behind a single
+``wire_into_core()`` called from its own ``__init__``, so that every entry point
+and test that imports the package configures the core uniformly, and nothing has
+to remember to wire it.  See ``docs/injection-api.md`` for a worked example.
 """
 
 from typing import Callable, Optional

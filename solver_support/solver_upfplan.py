@@ -4,9 +4,8 @@ UPF solver implementation - the single class behind every UPF-routed model.
 UpfPlanSolver drives the consumer's UPF planner CLI through run_phase, so it
 inherits the timeout/signal handling and SIGTERM summary generation every solver
 gets. The CLI name is not baked in: the consumer supplies it (``upfplan_command=``
-or by overriding the ``UPFPLAN_COMMAND`` class attribute) - puzznic passes
-``puzznic-upfplan``. It reaches a UPF engine by the two routes that CLI supports,
-selected here by ``build_mode``:
+or by overriding the ``UPFPLAN_COMMAND`` class attribute). It reaches a UPF engine
+by the two routes that CLI supports, selected here by ``build_mode``:
 
   - build_mode is None (PDDL models, e.g. pddlnoaxiom): pass ``--domain`` so the
     CLI reads the PDDL through unified_planning's PDDLReader and solves with the
@@ -48,8 +47,8 @@ class UpfPlanSolver(Solver):
         self.solver_name = solver_name
         # None -> read PDDL via --domain; 'upf'/'upflocal' -> construct via --build.
         self.build_mode = build_mode
-        # The consumer's UPF planner CLI (puzznic supplies 'puzznic-upfplan'); an
-        # explicit argument wins, else the class-attribute override, else unset.
+        # The consumer's UPF planner CLI; an explicit argument wins, else the
+        # class-attribute override, else unset.
         self.upfplan_command = upfplan_command or self.UPFPLAN_COMMAND
 
     def _tune_fd_search(self, registry, tune, engine_name) -> Optional[str]:
@@ -138,7 +137,7 @@ class UpfPlanSolver(Solver):
 
         # Forward debug so the upfplan subprocess's diagnostics (the compilation
         # trace, the dumped compiled problem) print on its stderr under the
-        # consumer's debug flag (e.g. `puzznic-run -d`) - where run_phase
+        # consumer's debug flag (its `-d` / `--debug`) - where run_phase
         # captures/tees them, and clear of the plan-only stdout the .solution is
         # built from.
         if global_state.debug:

@@ -619,7 +619,7 @@ class TestConsumerOwnedFields:
         assert s.to_dict()['score'] == 100
 
     def test_a_summary_written_before_the_field_moved_still_loads(self):
-        """`canonical_score` used to be declared on RunSummary; it is a puzznic
+        """`canonical_score` used to be declared on RunSummary; it is a consumer
         concept (a replay of the solution, re-scored) that this package can
         neither compute nor interpret, so it moved into `extra`.
 

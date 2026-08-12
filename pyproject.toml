@@ -11,7 +11,10 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "solver-support"
-version = "0.1.0"
+# Single-sourced from solver_support.__version__, so a release bump touches one
+# line and the installed metadata can never disagree with what the package
+# reports at runtime.
+dynamic = ["version"]
 description = "Generic Conjure / Savile Row / Fast Downward / SymK / ENHSP / UPF solver pipeline"
 readme = "README.md"
 requires-python = ">=3.9"
@@ -68,6 +71,9 @@ dev = [
 
 [tool.setuptools]
 zip-safe = false
+
+[tool.setuptools.dynamic]
+version = {attr = "solver_support.__version__"}
 
 [tool.setuptools.packages.find]
 include = ["solver_support*"]

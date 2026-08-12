@@ -18,8 +18,8 @@ from pathlib import Path
 # that belongs on the run and that the core has no concept of - a domain
 # cross-check, a provenance tag. Such a field must not be declared on the core's
 # dataclasses, or the "domain-agnostic" record grows a consumer's vocabulary (as
-# `canonical_score`, naming puzznic's replay scorer, once did). It goes in
-# ``extra`` instead.
+# a `canonical_score`, naming one consumer's replay scorer, once did). It goes
+# in ``extra`` instead.
 #
 # ``extra`` is *flattened* on the way out and re-gathered on the way in, so the
 # JSON is exactly as it would have been with a declared field. That keeps every
@@ -143,9 +143,9 @@ class RunSummary:
     phases: List[PhaseResult] = field(default_factory=list)  # Individual phase results
     # Consumer-owned fields the core does not interpret, flattened into the saved
     # JSON so they are indistinguishable on disk from a declared field. This is
-    # where a domain datum belongs - e.g. puzznic's `canonical_score`, the score
-    # of a replay of the solution, which cross-checks the solver-reported `score`
-    # and which the core has no way to compute or interpret.
+    # where a domain datum belongs - e.g. a `canonical_score`, the score of an
+    # independent replay of the solution, which cross-checks the solver-reported
+    # `score` and which the core has no way to compute or interpret.
     extra: Dict[str, Any] = field(default_factory=dict)
     
     def add_phase(self, phase: PhaseResult) -> None:

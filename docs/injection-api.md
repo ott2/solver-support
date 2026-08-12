@@ -71,30 +71,67 @@ UpfPlanSolver.UPFPLAN_COMMAND = 'my-upfplan'     # class-attribute override
 `solve()` refuses with a clear `ValueError` if no command is configured, rather
 than shelling out to a `None`-prefixed argv.
 
-## worked example: how puzznic-support wires it
+## worked example
 
-Puzznic does all of this once, from `puzznic_support/__init__`:
+Wire everything once, at the consumer's own import time — in its
+`__init__.py`, so that every entry point and every test that imports the package
+gets an identically configured core, and nothing has to remember to wire it:
 
 ```python
-# scoring: puzznic_scoring.wire_into_core() registers the four objective extractors
-from . import puzznic_scoring
-puzznic_scoring.wire_into_core()
+# in mypuzzle_support/__init__.py
 
-# registry packaging: register where puzznic's models.yaml and model files live
-from . import registry_config
-registry_config.wire_into_registry()
-
-# warnings: funnel core warn() into puzznic's configured runner logger
-from solver_support import utilities as _core_utilities
-_core_utilities.set_warn_logger_name('puzznic_runner')
+# 1. scoring: register the objective extractors this domain uses. Grouping them
+#    behind one wire_into_core() keeps the registration next to the parsing.
+from . import mypuzzle_scoring
+mypuzzle_scoring.wire_into_core()
 ```
 
-and injects the UPF CLI where it constructs the solver:
+```python
+# in mypuzzle_support/mypuzzle_scoring.py
+import re
+from solver_support import (
+    set_reported_score_from_stdout, set_raw_objective_from_solution,
+)
+
+def _score_from_stdout(stdout):
+    m = re.search(r'^Score:\s*(-?\d+)', stdout, re.MULTILINE)
+    return int(m.group(1)) if m else None
+
+def wire_into_core():
+    set_reported_score_from_stdout(_score_from_stdout)
+    set_raw_objective_from_solution(_objective_from_solution)   # model units
+```
+
+```python
+# back in __init__.py
+
+# 2. registry packaging: where this consumer's models.yaml and model files live.
+#    A finder (not a fixed path) for the user override, so cwd-relative
+#    candidates bind when the registry is built rather than at import.
+from pathlib import Path
+from solver_support import (
+    set_default_config_path, set_resource_root, set_user_config_finder,
+)
+
+_here = Path(__file__).parent
+set_default_config_path(_here / 'config' / 'models.yaml')
+set_resource_root(_here)
+set_user_config_finder(lambda: next(
+    (p for p in (Path.cwd() / 'models.yaml',) if p.is_file()), None))
+
+# 3. warnings: funnel the core's warn() into this consumer's configured logger,
+#    so they reach the same file and console handlers as its own messages.
+from solver_support import set_warn_logger_name
+set_warn_logger_name('mypuzzle_runner')
+```
+
+and inject the UPF CLI where the solver is constructed:
 
 ```python
 UpfPlanSolver(runner, solver_name=solver, build_mode=build_mode,
-              upfplan_command='puzznic-upfplan')
+              upfplan_command='mypuzzle-upfplan')
 ```
 
-A different consumer registers its own scoring, its own `models.yaml`, its own
-logger name, and its own UPF CLI — nothing here is puzznic-specific.
+Each consumer registers its own scoring, its own `models.yaml`, its own logger
+name and its own UPF CLI. Nothing above is built into the core, and the core
+never imports the consumer.
