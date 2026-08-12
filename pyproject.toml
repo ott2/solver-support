@@ -1,7 +1,11 @@
 [build-system]
-# >=77 because `license` below is the PEP 639 SPDX-expression form, which
-# earlier setuptools rejects (it wanted a {text=...}/{file=...} table). The old
-# >=45 floor predated that and would fail to build the very licence it declares.
+# >=77 because `license` below is the PEP 639 SPDX-expression form: 76.1.0
+# rejects a bare string ("must be valid exactly by one definition", wanting a
+# {text=...}/{file=...} table), 77.0.1 accepts it. The old >=45 floor predated
+# PEP 639 and would fail to build the very licence it declares. This costs
+# nothing in Python support: setuptools dropped 3.8 back in 75.4.0 and kept 3.9
+# until 83.0.0, so the whole 77.0.1-82.x range is available to requires-python
+# below.
 requires = ["setuptools>=77", "wheel"]
 build-backend = "setuptools.build_meta"
 
@@ -13,7 +17,7 @@ readme = "README.md"
 requires-python = ">=3.9"
 license = "BSD-3-Clause"
 authors = [
-    {name = "Andras Salamon"},
+    {name = "András Salamon"},
 ]
 classifiers = [
     "Development Status :: 3 - Alpha",
