@@ -79,4 +79,4 @@ config — that shape is the contract the loader implements.
 
 ## licence
 
-BSD-3-Clause.
+BSD-3-Clause — see [`LICENSE`](LICENSE).

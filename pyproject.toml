@@ -1,5 +1,8 @@
 [build-system]
-requires = ["setuptools>=45", "wheel"]
+# >=77 because `license` below is the PEP 639 SPDX-expression form, which
+# earlier setuptools rejects (it wanted a {text=...}/{file=...} table). The old
+# >=45 floor predated that and would fail to build the very licence it declares.
+requires = ["setuptools>=77", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
