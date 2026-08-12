@@ -1,0 +1,18 @@
+# What lands in the SOURCE distribution (`python -m build --sdist`).
+#
+# This does not affect the wheel -- the artefact `pip install solver-support`
+# actually fetches -- which carries only the solver_support package and its
+# metadata, and is already minimal. It governs the source release, which should
+# be self-contained: buildable, and testable by anyone repackaging it (a distro
+# or conda-forge recipe typically runs the suite at build time).
+#
+# setuptools' defaults already pick up README.md, LICENSE, pyproject.toml and
+# tests/test_*.py -- but NOT tests/conftest.py, whose name does not match
+# `test*`, nor the YAML fixture the registry tests load. The sdist therefore
+# shipped a test suite that could not run at all: every test needing a fixture
+# errored on a missing one. These two lines are what make it coherent.
+recursive-include tests *.py *.yaml
+
+# The docs the README points at, so the source release does not dangle links to
+# files it does not carry.
+recursive-include docs *.md

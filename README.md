@@ -20,7 +20,7 @@ consumer supplies:
 ## status
 
 **Alpha.** The core has been extracted, module by module, from
-[`puzznic-support`](../puzznic) — its first consumer and the origin of every
+`puzznic-support` — its first consumer and the origin of every
 module here — which now consumes this package. The extraction was staged so the
 originating test suite stayed green throughout:
 
@@ -37,17 +37,20 @@ consumer supplies its scoring, registry, logger and UPF CLI via injection.
 
 ## usage
 
-See [`docs/injection-api.md`](docs/injection-api.md) for the injection points a
+See [`docs/injection-api.md`](https://github.com/ott2/solver-support/blob/main/docs/injection-api.md)
+for the injection points a
 consumer wires (model-registry paths, objective extraction, warning logger, UPF
 CLI) and a worked example of how puzznic-support wires them.
 
 ## docs
 
-- [`injection-api.md`](docs/injection-api.md) — the four seams a consumer wires.
-- [`solver-runner.md`](docs/solver-runner.md) — running a solver as a
-  subprocess: `SolverResult`, timeout vs duration, phases.
-- [`timing-model.md`](docs/timing-model.md) — how solver timing is recorded, how
-  the backends map onto one shape, and the invariants parsers rely on.
+- [`injection-api.md`](https://github.com/ott2/solver-support/blob/main/docs/injection-api.md)
+  — the four seams a consumer wires.
+- [`solver-runner.md`](https://github.com/ott2/solver-support/blob/main/docs/solver-runner.md)
+  — running a solver as a subprocess: `SolverResult`, timeout vs duration, phases.
+- [`timing-model.md`](https://github.com/ott2/solver-support/blob/main/docs/timing-model.md)
+  — how solver timing is recorded, how the backends map onto one shape, and the
+  invariants parsers rely on.
 
 ## development
 
@@ -79,4 +82,5 @@ config — that shape is the contract the loader implements.
 
 ## licence
 
-BSD-3-Clause — see [`LICENSE`](LICENSE).
+BSD-3-Clause — see
+[`LICENSE`](https://github.com/ott2/solver-support/blob/main/LICENSE).

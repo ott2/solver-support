@@ -42,17 +42,22 @@ dependencies = [
     "PyYAML>=5.4",    # model-registry loader (consumers supply their own yaml)
 ]
 
-# Extras are populated during the physical extraction (Phase 3/4), when the
-# modules that need them (plotting, the UPF driver) actually move across.
-[project.optional-dependencies]
-plot = [
-    # pandas / matplotlib -- filled in when plot.py moves
-]
-upf = [
-    # up-fast-downward / up-enhsp / unified_planning fork pin -- filled in when
-    # upf_common.py / solver_upfplan.py move (see puzznic-support pyproject for
-    # the pinned revision and why bidict/ortools must be listed explicitly)
-]
+[project.urls]
+Homepage = "https://github.com/ott2/solver-support"
+Repository = "https://github.com/ott2/solver-support"
+Issues = "https://github.com/ott2/solver-support/issues"
+
+# No optional-dependencies yet. `plot` and `upf` were declared here as empty
+# placeholders during the extraction; on a published package an empty extra is a
+# trap, since `pip install solver-support[upf]` then succeeds while installing
+# nothing at all, and the user concludes the UPF route is set up when it is not.
+# Re-add each when it actually carries requirements:
+#   plot -> pandas / matplotlib, when a plotting module moves across
+#   upf  -> up-fast-downward / up-enhsp / the unified_planning fork pin (see
+#           puzznic-support's pyproject for the revision, and for why bidict and
+#           ortools have to be listed explicitly)
+# Note the core does not import unified_planning at all: solver_upfplan shells
+# out to a consumer-provided CLI, so the upf extra belongs to whoever ships that.
 
 [dependency-groups]
 dev = [
