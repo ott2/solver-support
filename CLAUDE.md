@@ -24,7 +24,7 @@ exist and all have `solver_support` editable-installed — the shared one is
 ```bash
 V=/Users/as456/projects/claudecode/venv/bin/python
 
-$V -m pytest tests/ -q                            # full suite (201 tests, ~2s)
+$V -m pytest tests/ -q                            # full suite (223 tests, ~5s)
 $V -m pytest tests/test_solver_stats.py -q        # one file
 $V -m pytest tests/test_solvers.py::TestFastDownwardSolver::test_solve_success -q   # one test
 $V -m pytest tests/ -m "not slow" -q              # skip the `slow` marker
@@ -32,6 +32,22 @@ $V -m pytest tests/ --cov=solver_support          # coverage (pytest-cov is a de
 
 pip install -e /Users/as456/projects/claudecode/solver_support   # editable install
 ```
+
+**Python 3.9 is a real constraint, not a formality.** It is the macOS system Python
+(`/usr/bin/python3` is 3.9.6), where most people installing this already are, so a
+source install must not need a newer interpreter: no 3.10+ syntax (`match`, `X | Y`
+annotations) — use the `typing` equivalents. Every local venv is 3.14, so nothing
+exercises the floor by default. Check it explicitly when touching syntax or
+packaging:
+
+```bash
+rm -rf /tmp/py39 && /usr/bin/python3 -m venv /tmp/py39
+/tmp/py39/bin/python -m pip install -q . pytest && /tmp/py39/bin/python -m pytest tests/ -q
+```
+
+The `build-system` floor of `setuptools>=77` is what the PEP 639 SPDX `license`
+field needs (76.1.0 rejects a bare string). It costs no 3.9 support — setuptools
+kept 3.9 until 83.0.0 — but raising it past 82.x would.
 
 The suite runs against `solver_support` alone — no consumer is installed or imported.
 Tests never shell out to a real solver; they mock `SolverRunner`/subprocess or feed

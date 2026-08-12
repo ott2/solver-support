@@ -25,6 +25,16 @@ classifiers = [
     "Intended Audience :: Science/Research",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
+    # 3.9 is deliberate and load-bearing: it is the system Python on macOS
+    # (3.9.6), where most people likely to install this already are, so a source
+    # install must not need a newer interpreter. Verified by building and running
+    # the suite on /usr/bin/python3.
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 dependencies = [
