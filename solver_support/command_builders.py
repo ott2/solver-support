@@ -24,6 +24,14 @@ from .model_registry import ModelRegistryError
 class CommandBuilderMixin:
     """The ``build_*_command`` methods mixed into :class:`ModelRegistry`."""
 
+    #: Which tune key holds each Savile Row backend's arg-set. A backend absent
+    #: here uses ``sat_args``, so a config with no ``backend:`` keeps behaving as
+    #: the kissat SAT backend it has always been.
+    SAVILEROW_ARG_KEYS = {
+        'minion': 'minion_args',
+        'ortools': 'ortools_args',
+    }
+
     def build_savilerow_command(self, model_path: str, param_path: str,
                                use_srjava: bool = False,
                                timeout: Optional[int] = None,
@@ -46,17 +54,18 @@ class CommandBuilderMixin:
             objective_file_path: path for intermediate objective values file (default: obj.txt)
             extra_options: additional command line options to pass to Savile Row
             solver_name: name of the solver configuration to use (default: 'kissat').
-                The backend (kissat vs minion) is a property of this config:
-                a config with ``backend: minion`` uses its tune presets'
-                minion_args and Minion's timeout dialect, otherwise the kissat
-                SAT arg-set is used.
+                The backend is a property of this config: ``backend: minion``
+                uses its tune presets' minion_args and Minion's timeout dialect,
+                ``backend: ortools`` uses ortools_args and drives a FlatZinc
+                solver (optionally named by ``fzn_bin``), and no ``backend:`` key
+                means the kissat SAT arg-set.
             tune: name of a ``tune:`` preset to apply instead of the config's
                 ``default_tune`` (kissat: 'safe'/'bare'/'srdefault'/'gac';
                 minion: 'bare'). The preset supplies this backend's arg-set
-                (sat_args for kissat, minion_args for minion). A name that is
-                unknown or lacks this backend's arg key falls back to
-                ``default_tune``. This is the savilerow arm of the same ``--tune``
-                dial fd uses for its search presets.
+                (sat_args for kissat, minion_args for minion, ortools_args for
+                or-tools). A name that is unknown or lacks this backend's arg key
+                falls back to ``default_tune``. This is the savilerow arm of the
+                same ``--tune`` dial fd uses for its search presets.
 
         Returns:
             Complete command as list of strings.
@@ -67,10 +76,11 @@ class CommandBuilderMixin:
         """
         solver_config = self.get_solver_config(solver_name)
 
-        # The backend solver (kissat SAT vs Minion CP) is declared by the config,
-        # not passed in: `--solver minion` selects the minion backend config. This
-        # replaced the old cross-cutting `--minion` boolean.
-        use_minion = solver_config.get('backend') == 'minion'
+        # The backend solver is declared by the config, not passed in: `--solver
+        # minion` selects the minion backend config. This replaced the old
+        # cross-cutting `--minion` boolean. Absent means the kissat SAT backend,
+        # which is what every pre-existing config relies on.
+        backend = solver_config.get('backend', 'sat')
 
         # Choose command variant
         if use_srjava:
@@ -91,11 +101,12 @@ class CommandBuilderMixin:
                 command = solver_config['command']
 
         # Choose the argument set from the active tune preset. kissat presets
-        # carry sat_args, minion presets carry minion_args; a tune that is
-        # unknown or lacks this backend's key falls back to default_tune (the
-        # lenient behaviour the fd builder uses too). The model-default tune is
-        # resolved by the caller, so `tune` here is already the effective name.
-        arg_key = 'minion_args' if use_minion else 'sat_args'
+        # carry sat_args, minion presets carry minion_args, or-tools presets
+        # carry ortools_args; a tune that is unknown or lacks this backend's key
+        # falls back to default_tune (the lenient behaviour the fd builder uses
+        # too). The model-default tune is resolved by the caller, so `tune` here
+        # is already the effective name.
+        arg_key = self.SAVILEROW_ARG_KEYS.get(backend, 'sat_args')
         tunes = solver_config.get('tune', {})
         tune_name = self._effective_tune(solver_config, tune, arg_key)
         preset = tunes.get(tune_name, {})
@@ -104,20 +115,38 @@ class CommandBuilderMixin:
                 f"Solver '{solver_name}' tune '{tune_name}' has no {arg_key}"
             )
         args = preset[arg_key].copy()
-        if not use_minion:
-            # Add objective recording arguments only when needed
+        if backend == 'sat':
+            # Add objective recording arguments only when needed. This is a SAT
+            # facility: Savile Row records intermediate objectives as it drives
+            # its own optimisation loop over the SAT solver. A FlatZinc backend
+            # optimises internally, so there is nothing for it to record.
             if objective_file_path is not None:
                 args.extend(["-record-intermediate-objective-values", objective_file_path])
+
+        # A FlatZinc backend needs the solver binary named when it is not the one
+        # Savile Row assumes. Left unset the SR default applies, so the registry
+        # never has to bake in one machine's binary name.
+        fzn_bin = solver_config.get('fzn_bin')
+        if fzn_bin:
+            args.extend(["-fzn-bin", fzn_bin])
 
         # Add timeout arguments
         if timeout is None:
             timeout = solver_config['default_timeout']
 
-        # Different timeout handling for minion vs SAT solver
+        # Each backend spells its own time limit differently. Savile Row's
+        # -timelimit covers translation plus solving; the pass-through gives the
+        # solver its own budget so it stops itself rather than being killed.
         if timeout is not None:
-            if use_minion:
+            if backend == 'minion':
                 # For minion, just use -timelimit (no solver-options needed)
                 args.extend(["-timelimit", str(timeout)])
+            elif backend == 'ortools':
+                # fzn-cp-sat takes --time_limit in seconds (an Abseil flag).
+                args.extend([
+                    "-solver-options", f"--time_limit={timeout}",
+                    "-timelimit", str(timeout)
+                ])
             else:
                 # For SAT solver (kissat), use both -solver-options and -timelimit
                 args.extend([

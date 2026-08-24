@@ -55,3 +55,67 @@ solvers:
       - .eprime
     default_timeout: 600
     description: SAT backend driven through Savile Row
+
+  # The three Savile Row backends, with tune presets, for the command builder
+  # tests. Separate from `kissat` above so that adding them cannot perturb the
+  # tests which rely on that entry having no presets.
+  srsat:
+    # No `backend:` key at all -- the shape every pre-existing SAT config has.
+    solver_type: savilerow
+    command: savilerow
+    extensions:
+      - .eprime
+    default_timeout: null
+    default_tune: default
+    tune:
+      default:
+        sat_args:
+          - "-run-solver"
+          - "-sat"
+        description: SAT backend
+
+  srminion:
+    solver_type: savilerow
+    command: savilerow
+    extensions:
+      - .eprime
+    default_timeout: null
+    backend: minion
+    default_tune: default
+    tune:
+      default:
+        minion_args:
+          - "-run-solver"
+        description: Minion backend
+
+  srortools:
+    solver_type: savilerow
+    command: savilerow
+    extensions:
+      - .eprime
+    default_timeout: null
+    backend: ortools
+    default_tune: default
+    tune:
+      default:
+        ortools_args:
+          - "-run-solver"
+          - "-or-tools"
+        description: OR-Tools CP-SAT backend
+
+  srortoolsnamed:
+    # Same, but pinning the FlatZinc binary by name.
+    solver_type: savilerow
+    command: savilerow
+    extensions:
+      - .eprime
+    default_timeout: null
+    backend: ortools
+    fzn_bin: fzn-ortools
+    default_tune: default
+    tune:
+      default:
+        ortools_args:
+          - "-run-solver"
+          - "-or-tools"
+        description: OR-Tools CP-SAT backend, binary pinned
