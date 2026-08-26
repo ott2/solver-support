@@ -177,13 +177,19 @@ solvers:
         description: Gecode backend, binary pinned
 
   srbadbackend:
-    # A typo'd backend name: must be rejected, not silently run as SAT.
+    # A wrong backend name: must be rejected, not silently run as SAT.
+    #
+    # `or-tools` rather than an obviously-mangled string, because this is the
+    # mistake someone would actually make: Savile Row's flag is `-or-tools`, so a
+    # config author copying the name out of the documentation writes the
+    # hyphenated form. A test that only rejects gibberish would not have caught
+    # the near-miss that matters.
     solver_type: savilerow
     command: savilerow
     extensions:
       - .eprime
     default_timeout: null
-    backend: ortoolz
+    backend: or-tools
     default_tune: default
     tune:
       default:

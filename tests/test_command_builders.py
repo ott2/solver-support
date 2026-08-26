@@ -73,10 +73,12 @@ class TestUnknownBackend:
     """A misspelled backend is an error, not a quiet fallback to SAT."""
 
     def test_unknown_backend_raises(self, registry):
-        # `srbadbackend` says `backend: ortoolz` and carries sat_args, so the
-        # lenient path would have built a working SAT command line -- a run that
-        # succeeds while measuring the wrong solver.
-        with pytest.raises(ModelRegistryError, match="unknown backend 'ortoolz'"):
+        # `srbadbackend` says `backend: or-tools` -- the hyphenated spelling of
+        # Savile Row's own flag, and so the near-miss a config author is most
+        # likely to write -- and carries sat_args, so the lenient path would have
+        # built a working SAT command line: a run that succeeds while measuring
+        # the wrong solver.
+        with pytest.raises(ModelRegistryError, match="unknown backend 'or-tools'"):
             build(registry, "srbadbackend")
 
     def test_error_lists_the_known_backends(self, registry):
