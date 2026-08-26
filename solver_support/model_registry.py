@@ -9,6 +9,7 @@ from the original bash run script.
 
 from pathlib import Path
 from typing import Dict, Any, Optional, List, Tuple, Callable
+import copy
 import shutil
 import yaml
 
@@ -95,8 +96,14 @@ class ModelRegistry(CommandBuilderMixin):
         
         self.config = {'models': {}, 'solvers': {}}
         self._savilerow_native_warning_shown = False  # Track if we've shown the warning
+        # Every file merged in, in the order merged, so a caller can report what
+        # actually contributed. Without this the answer is only reconstructible
+        # by re-running the same two searches by hand - and the user-override one
+        # depends on the cwd at construction time, so it is not reproducible
+        # later. See `dump_config`.
+        self.config_sources: List[Path] = []
         self._load_yaml_config(default_yaml)
-        
+
         # Then, load user configuration to override defaults
         user_yaml = config_path or self._find_user_yaml_config()
         if user_yaml:
@@ -145,10 +152,11 @@ class ModelRegistry(CommandBuilderMixin):
         try:
             with open(config_path, 'r') as f:
                 user_config = yaml.safe_load(f)
-            
+
             # Deep merge user config with existing config
             self._deep_merge(self.config, user_config)
-            
+            self.config_sources.append(Path(str(config_path)))
+
         except Exception as e:
             raise ModelRegistryError(f"Failed to load config file {config_path}: {e}")
     
@@ -165,7 +173,76 @@ class ModelRegistry(CommandBuilderMixin):
                 self._deep_merge(base[key], value)
             else:
                 base[key] = value
-    
+
+    def effective_config(self, resolved: bool = False) -> Dict[str, Any]:
+        """The configuration actually in force, as a plain dict.
+
+        A deep copy of the merge of every file in ``config_sources``: the
+        consumer's bundled config first, then any user override merged over it.
+        Answering "what is in force?" otherwise means reading both files and
+        performing the merge by eye - and the override's location depends on the
+        working directory at construction time, so it cannot reliably be
+        reconstructed afterwards.
+
+        With ``resolved``, values a *builder* supplies when a key is absent are
+        written out explicitly - currently a savilerow solver's implicit
+        ``backend: sat``, the one default whose absence changes which arg-set,
+        timeout dialect and binary flag are used. Only real config keys are ever
+        added, so a resolved dump still loads; see :meth:`dump_config` for why
+        loading one back is not what it is for.
+
+        The copy is deep, so a caller may edit the result without disturbing the
+        live registry.
+        """
+        config = copy.deepcopy(self.config)
+        if resolved:
+            for solver_config in config.get('solvers', {}).values():
+                if (isinstance(solver_config, dict)
+                        and solver_config.get('solver_type') == 'savilerow'):
+                    solver_config.setdefault('backend', 'sat')
+        return config
+
+    def dump_config(self, resolved: bool = False, header: bool = True) -> str:
+        """The effective configuration as YAML text, for inspection.
+
+        Intended for a consumer's ``--show-registry``-style flag: it answers what
+        the registry resolved to and which files contributed. It is deliberately
+        *not* a config generator. Two reasons, both stated in the emitted header:
+
+        - Comments are not preserved. A config's comments carry the reasoning for
+          its arg-sets and timeouts, and a YAML round-trip drops all of them, so
+          the dump is a view of the configuration rather than a replacement.
+        - Overrides are deep-merged, so adopting a full dump as a user config
+          pins every key at today's value and silently shadows later changes to
+          the bundled config. A partial override is the supported shape: copy
+          only the keys being changed.
+        """
+        text = yaml.safe_dump(self.effective_config(resolved=resolved),
+                              sort_keys=False, default_flow_style=False,
+                              allow_unicode=True)
+        if not header:
+            return text
+
+        lines = ["# Effective solver-support registry, merged in this order:"]
+        lines.extend(f"#   {i}. {source}"
+                     for i, source in enumerate(self.config_sources, start=1))
+        if not self.config_sources:
+            lines.append("#   (none)")
+        if resolved:
+            lines.append("#")
+            lines.append("# Defaults a builder would supply are written out "
+                         "explicitly here.")
+        lines.extend([
+            "#",
+            "# For reading, not for adopting wholesale. Comments in the source",
+            "# files are not preserved, and overrides are deep-merged - so using",
+            "# this whole file as an override would pin every key at today's",
+            "# value and silently shadow later changes. Copy only what you mean",
+            "# to change.",
+            "",
+        ])
+        return "\n".join(lines) + "\n" + text
+
     def get_model_path(self, model_type: str) -> Path:
         """
         Get the file path for a model type.

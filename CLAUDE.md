@@ -92,7 +92,12 @@ Roughly a pipeline, bottom-up:
   `build_*_command` argv assemblers, which are a `CommandBuilderMixin` that
   `ModelRegistry` inherits. There is a deliberate back-import cycle: `command_builders`
   imports `ModelRegistryError` from `model_registry`, which imports the mixin *after*
-  defining that exception. Don't reorder those imports.
+  defining that exception. Don't reorder those imports. Config loading is a **deep
+  merge** of the consumer's bundled yaml then an optional user override, so a partial
+  override is the supported shape; `config_sources` records what was merged and
+  `effective_config()` / `dump_config()` report the result for a consumer's
+  `show-registry`-style command. The dump is a *view* — it drops comments, and a
+  whole-file copy readopted as an override would pin every key at today's value.
 - **`solver_base.py`** — the abstract `Solver`; `solve(param_file, **kwargs) -> Optional[Path]`.
   Solvers run in the *current working directory* (the caller has already chdir'd) and
   use relative paths.
