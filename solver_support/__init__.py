@@ -13,7 +13,7 @@ unconfigured pipeline. A consumer registers its scoring (see :mod:`objective`)
 and its packaging paths (see :mod:`model_registry`) once at its own import time.
 """
 
-__version__ = "0.1.2"
+__version__ = "0.2.1"
 
 # --- model registry (loader + command builders + packaging injection) ---
 from .model_registry import (
