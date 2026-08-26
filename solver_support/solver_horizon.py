@@ -227,11 +227,31 @@ class HorizonBasedSolver(Solver):
                 self.runner.summary.phases[-1].solver_stats['objbound'] = self._best_objective
 
     def _record_savilerow_times(self, param_file: Path, n: int) -> None:
-        """Attach Savile Row's tailoring/solver time split to horizon n's phase.
+        """Attach Savile Row's ``.info`` stats to horizon n's phase.
 
         Reads the ``<param_file>.info`` stats file Savile Row writes for this
         horizon and records ``savilerow_time`` (tailoring) and ``solver_time``
         on the phase, alongside the wall-clock ``duration`` already stored.
+
+        The whole file is also kept verbatim under ``savilerow_info``. The two
+        renamed times are what the phase model needs, but the same file carries
+        the encoding-size and search-effort numbers (``SATVars``, ``SolverNodes``,
+        ``SolverFailures``, ...) and the outcome flags (``SolverSatisfiable``
+        distinguishes a refuted horizon from one that gave up; ``SolverTimeOut``
+        / ``SavileRowTimeOut`` attribute a timeout to the solver or to
+        tailoring). Without this a consumer wanting any of them has to re-parse
+        the ``.info`` files itself, which duplicates the parser and needs the
+        run's output directory rather than just its summary - so it stops working
+        once those files are cleaned up.
+
+        Kept **nested and verbatim** rather than flattened in. ``solver_stats``
+        is the core's normalised, cross-solver vocabulary; these are one solver's
+        own keys in its own spelling, and the backends do not even agree on which
+        of them exist - Minion alone emits ``SolverSetupTime`` /
+        ``SolverSolveTime`` / ``SolverSolutionsFound``, the FlatZinc backends
+        alone ``SolverTotalWallTime``, kissat alone ``SATVars`` / ``SATClauses``.
+        A curated allow-list would therefore be wrong already, and nesting also
+        keeps CamelCase keys from colliding with the snake_case ones beside them.
         ``param_file`` is whatever parameter file Savile Row was run on - the
         Essence Prime ``.param`` for the direct Savile Row path, or the
         Conjure-translated ``.eprime-param`` for the Essence path - since Savile
@@ -242,12 +262,15 @@ class HorizonBasedSolver(Solver):
         the matching ``solving-horizon-{n}`` phase so it cannot scribble on an
         unrelated phase.
         """
+        info = SolverStatsExtractor.extract_savilerow_info(f"{param_file}.info")
         times = SolverStatsExtractor.extract_savilerow_info_times(f"{param_file}.info")
-        if not times:
+        if not times and not info:
             return
         phases = self.runner.summary.phases
         if phases and phases[-1].name == f"solving-horizon-{n}":
             phases[-1].solver_stats.update(times)
+            if info:
+                phases[-1].solver_stats['savilerow_info'] = info
 
     def _build_savilerow_command(self, model_path: str, param_path: str, timeout: Optional[int], obj_file: Optional[Path] = None) -> List[str]:
         """

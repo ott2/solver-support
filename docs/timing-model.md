@@ -76,12 +76,34 @@ fields. All times are seconds unless noted.
   `solver_time`, attaching them to the matching phase. Recorded for *every*
   horizon, so intermediate UNSAT horizons carry the split too.
 - **The rest of the file**: those two are what the phase model needs, but the
-  same `.info` carries the encoding size and search counters (`SATVars`,
-  `SATClauses`, `SolverNodes`, `SolverSatisfiable`, ...).
-  `SolverStatsExtractor.extract_savilerow_info(path)` returns every `Key:Value`
-  pair with keys verbatim and values coerced to int/float, for a consumer
-  reporting those columns; `extract_savilerow_info_times` is the renaming subset
-  of it that the core itself uses.
+  same `.info` carries the encoding size, the search counters, and the outcome
+  flags. All of it is recorded verbatim on the phase under
+  `solver_stats['savilerow_info']`, so a consumer never has to go back to the
+  `.info` files — which matters because that would depend on the run's output
+  directory rather than its summary, and so stops working once those files are
+  cleaned up. `SolverStatsExtractor.extract_savilerow_info(path)` is the parser
+  (keys verbatim, values coerced to int/float, `{}` for a missing file);
+  `extract_savilerow_info_times` is the renaming subset that produces the two
+  fields above.
+- **Nested, not flattened, and deliberately not curated.** `solver_stats` is the
+  core's normalised cross-solver vocabulary; `savilerow_info` is one solver's own
+  keys in its own spelling, so nesting keeps CamelCase off the snake_case
+  namespace. It is verbatim because the backends do not agree on which keys
+  exist — measured on one model:
+
+  | key | minion | ortools | gecode | chuffed | kissat |
+  |---|:-:|:-:|:-:|:-:|:-:|
+  | `SavileRowTotalTime` `SolverTotalTime` `SolverSatisfiable` `SolverTimeOut` `SavileRowTimeOut` `SavileRowClauseOut` | ✓ | ✓ | ✓ | ✓ | ✓ |
+  | `SolverNodes` | ✓ | — | ✓ | ✓ | ✓ |
+  | `SolverFailures` `SolverTotalWallTime` | — | ✓ | ✓ | ✓ | — |
+  | `SolverSetupTime` `SolverSolveTime` `SolverSolutionsFound` | ✓ | — | — | — | — |
+  | `SATVars` `SATClauses` `SolverMemOut` | — | — | — | — | ✓ |
+
+  Any allow-list would already be wrong, and would need extending for every new
+  backend or Savile Row version. Note `SolverSatisfiable` is one of the six every
+  backend emits: it distinguishes a **refuted horizon** from one that gave up —
+  which is *not* problem-level unsat, since a bounded model cannot prove that
+  (see `hlim`, above).
 - **Best-effort**: a hard timeout can kill Savile Row before it writes `.info`,
   leaving the split absent (`None`).
 
