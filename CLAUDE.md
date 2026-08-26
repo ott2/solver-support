@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 driving constraint-modelling and planning solvers (Conjure / Savile Row + SAT/CP
 backends, Fast Downward, SymK, ENHSP, and UPF-constructed models). It has no CLI,
 no entry points, and no `models.yaml` of its own. It was extracted module-by-module
-from `../puzznic` (`puzznic-support`), its first consumer, which now imports it.
+from an existing application, which now consumes it as a published dependency.
 
 The governing constraint: **the core ships unwired and knows nothing about any
 problem domain.** The dependency arrow points one way, consumer → core. Never import
@@ -53,14 +53,11 @@ The suite runs against `solver_support` alone — no consumer is installed or im
 Tests never shell out to a real solver; they mock `SolverRunner`/subprocess or feed
 captured solver output to the parsers.
 
-After changing anything a consumer relies on, check the consumer suite too. It needs
-that consumer's console scripts on `PATH` — without them ~11 tests fail on a missing
-`puzznic-vis` / `prob2any`, which is a PATH artifact, not a regression:
-
-```bash
-env PATH="/Users/as456/projects/claudecode/puzznic/venv/bin:$PATH" \
-  /Users/as456/projects/claudecode/puzznic/venv/bin/python -m pytest ../puzznic/tests -q
-```
+Consumers pin **released** versions from PyPI, so nothing here reaches them until a
+release. This repo's job is to keep its own contract, not to track who is using it:
+don't run a consumer's suite, don't reach into a consumer's checkout, and don't
+assume a sibling venv has an editable install of this package. Where a change needs
+a consumer to adapt, say so in the release notes.
 
 ## The four injection seams
 
@@ -166,7 +163,7 @@ planner's proven unsat: a bounded CP model *cannot* prove unsatisfiability.
 **Consumer-owned data goes in `extra`, never a declared field.** `RunSummary` and
 `PhaseResult` each carry an `extra` dict for data the core cannot interpret. Declaring
 such a field would grow a consumer's vocabulary into a domain-agnostic record — which
-is what `canonical_score` (puzznic's replay scorer) did before it was removed. `extra`
+is what `canonical_score`, a consumer's replay scorer, did before it was removed. `extra`
 is *flattened* into the serialised form and re-gathered on load, so the JSON is
 identical to what a declared field produced and readers that index a saved summary by
 key are unaffected. A core field wins a name collision. The gathering half also means
@@ -202,8 +199,8 @@ make it pass by adding a default rather than by injection are going the wrong wa
 
 ## Docs
 
-- `docs/injection-api.md` — the four seams, with a worked example of how
-  puzznic-support wires them.
+- `docs/injection-api.md` — the four seams, with a worked example of a consumer
+  wiring them.
 - `docs/solver-runner.md` — `SolverResult`, timeout vs duration, `run` / `run_phase` /
   `run_simple`.
 - `docs/timing-model.md` — the phase model, per-solver stat reference, and the
