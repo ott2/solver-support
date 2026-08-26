@@ -1,12 +1,13 @@
 # solver-support
 
 A generic, domain-agnostic pipeline for running constraint-modelling and
-planning solvers: **Conjure** / **Savile Row** (+ SAT/CP backends), **Fast
-Downward**, **SymK**, **ENHSP**, and **UPF**-constructed models. It handles the
-mechanics that every such run needs — building solver command lines from a model
-registry, spawning subprocesses with timeouts and clean teardown, naming the
-per-run files, parsing solver output into a uniform timing / cost-layer model,
-and driving the horizon (increasing-difficulty) loop.
+planning solvers: **Conjure** / **Savile Row** (driving a SAT solver, **Minion**,
+**OR-Tools CP-SAT**, **Gecode** or **Chuffed**), **Fast Downward**, **SymK**,
+**ENHSP**, and **UPF**-constructed models. It handles the mechanics that every
+such run needs — building solver command lines from a model registry, spawning
+subprocesses with timeouts and clean teardown, naming the per-run files, parsing
+solver output into a uniform timing / cost-layer model, and driving the horizon
+(increasing-difficulty) loop.
 
 It carries **no** notion of any particular problem domain or objective. A
 consumer supplies:
@@ -19,14 +20,17 @@ consumer supplies:
 
 ## Status
 
-**Alpha.** The pipeline is in day-to-day use by two consumers and is covered by
-its own test suite, but this is the first public release and the API may still
-shift between 0.x versions.
+**Alpha.** The pipeline is in day-to-day use by several consumers and is covered
+by its own test suite, but the API may still shift between 0.x releases. Each
+release's changes are listed on the
+[releases page](https://github.com/ott2/solver-support/releases).
 
-The package ships **unwired**: a bare `import solver_support` gives a pipeline
-that resolves no model registry and interprets no objective, because it has no
-way to guess either. A consumer registers its scoring, registry paths, warning
-logger and UPF CLI once, before first use.
+The package ships **unwired**, by design and on every release: a bare
+`import solver_support` gives a pipeline that resolves no model registry and
+interprets no objective, because it has no way to guess either. Constructing a
+`ModelRegistry` *raises* rather than falling back on a guess. A consumer
+registers its scoring, registry paths, warning logger and UPF CLI once, before
+first use — see [Usage](#usage).
 
 ## Installation
 
@@ -35,7 +39,8 @@ pip install solver-support
 ```
 
 Requires Python 3.9 or newer (3.9.6 is the system Python on macOS, and is
-supported deliberately). The only runtime dependencies are `psutil` and `PyYAML`.
+supported deliberately — each release is built and tested against it). The only
+runtime dependencies are `psutil` and `PyYAML`.
 
 ## Usage
 
@@ -55,14 +60,17 @@ extraction, warning logger, UPF CLI — with a worked example.
 
 ## Development
 
-Clone and install editable. A consumer under development alongside it is
-normally installed into the same virtualenv, so both are importable and edits to
-either take effect immediately:
+To work on this package, clone and install it editable:
 
 ```bash
 git clone https://github.com/ott2/solver-support
 pip install -e solver-support
 ```
+
+Consumers pin a **released** version from PyPI rather than the working tree, so a
+change here reaches them only when it is released. To try an unreleased change
+against a consumer, install this editable into that consumer's environment
+deliberately — it is not the default arrangement.
 
 ## Tests
 
