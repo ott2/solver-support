@@ -85,6 +85,45 @@ fields. All times are seconds unless noted.
 - **Best-effort**: a hard timeout can kill Savile Row before it writes `.info`,
   leaving the split absent (`None`).
 
+#### Backends
+
+Savile Row drives five backends, chosen by a solver config's `backend:` key and
+described by one row each in `CommandBuilderMixin.SAVILEROW_BACKENDS`. A config
+with no `backend:` key is the SAT arm, which is what every pre-existing config
+relies on. The row supplies three things that vary and nothing that does not; the
+arg-set key is *derived* as `<backend>_args`, so it needs no row.
+
+| `backend:` | arg-set key | solver's own time limit | binary flag |
+|---|---|---|---|
+| *(absent)* / `sat` | `sat_args` | `--time=N` (s) | `-satsolver-bin` |
+| `minion` | `minion_args` | *(none)* | `-minion-bin` |
+| `ortools` | `ortools_args` | `--time_limit=N` (s) | `-fzn-bin` |
+| `gecode` | `gecode_args` | `-time N` (**ms**) | `-gecode-bin` |
+| `chuffed` | `chuffed_args` | `--time-out N` (**ms**) | `-chuffed-bin` |
+
+Savile Row's own `-timelimit` is always added, always in seconds, and covers
+translation plus solving. The solver's limit is passed through `-solver-options`
+in addition, so the solver stops itself and reports rather than being killed with
+nothing to show. Repeated `-solver-options` accumulate, so a tune preset may
+carry its own without displacing the timeout.
+
+**The units are a trap.** Gecode and Chuffed take milliseconds and neither says
+so in its flag name. An unscaled value does not fail loudly — a 30s budget
+becomes 30ms and the solver gives up instantly, which reads as a hard instance.
+`timeout_scale` in the table is what converts; a config overriding
+`solver_timeout_option` changes the flag's *name* only, since the unit belongs to
+the solver rather than to the spelling.
+
+**Only the SAT arm records intermediate objectives.** It is the one configuration
+where Savile Row runs the optimisation loop itself; every other backend optimises
+internally, leaving nothing for `-record-intermediate-objective-values` to see.
+So for a non-SAT backend `_generate_objective_file_path` returns `None` and no
+`.obj` file is named or cleared, and `_check_continue_scan` falls back to the raw
+objective read out of the *solution* by the injected extractor. A consumer that
+wires only the objective-file route will find continue-scan stops at the first
+solving horizon on those backends instead of improving — wire
+`set_raw_objective_from_solution` to use them for optimisation models.
+
 ### Fast Downward / SymK (PDDL models)
 
 - **Shape**: not a horizon scan — one `solving` phase whose A\* (blind) / symbolic

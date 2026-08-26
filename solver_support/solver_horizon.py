@@ -32,8 +32,20 @@ class HorizonBasedSolver(Solver):
         self._stop_at_first = False  # regime: first stops the scan at the first solving horizon
         self.solver_name = solver_name  # the backend config (kissat/minion/...)
 
-    def _generate_objective_file_path(self, n: int) -> Path:
-        """Generate the objective file path for a given horizon."""
+    def _generate_objective_file_path(self, n: int) -> Optional[Path]:
+        """Generate the objective file path for a given horizon, or None.
+
+        None when the active backend does not write one. Only Savile Row's SAT
+        arm runs the optimisation loop that emits intermediate objectives, so for
+        a Minion or FlatZinc backend the file would be named, cleared, and then
+        never appear. Returning None here rather than gating each call site keeps
+        the three of them identical, and leaves continue-scan to read the
+        objective out of the solution via the injected extractor - which is the
+        only route those backends have.
+        """
+        if not global_state.model_registry.records_intermediate_objectives(
+                self.solver_name):
+            return None
         return ObjectiveFileManager.generate_objective_path(
             self.runner.summary.instance,
             self.runner.summary.solver,
@@ -43,8 +55,10 @@ class HorizonBasedSolver(Solver):
             tune=self.runner.summary.tune_slot
         )
 
-    def _prepare_objective_file(self, obj_file: Path) -> None:
+    def _prepare_objective_file(self, obj_file: Optional[Path]) -> None:
         """Prepare the objective file by removing any existing file."""
+        if obj_file is None:
+            return
         ObjectiveFileManager.prepare_objective_file(obj_file, self.logger)
 
     def _parse_objective_file(self, obj_file: Path) -> Optional[int]:

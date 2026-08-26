@@ -24,13 +24,83 @@ from .model_registry import ModelRegistryError
 class CommandBuilderMixin:
     """The ``build_*_command`` methods mixed into :class:`ModelRegistry`."""
 
-    #: Which tune key holds each Savile Row backend's arg-set. A backend absent
-    #: here uses ``sat_args``, so a config with no ``backend:`` keeps behaving as
-    #: the kissat SAT backend it has always been.
-    SAVILEROW_ARG_KEYS = {
-        'minion': 'minion_args',
-        'ortools': 'ortools_args',
+    #: The Savile Row backends, one row each. Everything the argv assembler needs
+    #: to know about a backend lives here, so adding one is a single entry plus
+    #: its ``<backend>_args`` presets in the config - not an edit spread across an
+    #: arg-set lookup, a binary flag and a timeout dialect. The arg-set key is
+    #: *derived* (``<backend>_args``) rather than tabulated, so it needs no row.
+    #:
+    #: ``sat`` is the implicit default: a config with no ``backend:`` key is the
+    #: kissat SAT backend every pre-existing config relies on.
+    #:
+    #: ``timeout_option`` is the *solver's own* time limit, handed to it through
+    #: Savile Row's ``-solver-options``; Savile Row's own ``-timelimit`` (covering
+    #: translation plus solving) is added for every backend regardless. Giving the
+    #: solver its own budget means it stops itself and reports, rather than being
+    #: killed with nothing to show.
+    #:
+    #: ``timeout_scale`` converts the seconds this API speaks into the unit that
+    #: solver expects. Gecode and Chuffed both want milliseconds and neither says
+    #: so in its flag name, which makes the mistake silent rather than loud: a 30s
+    #: budget passed unscaled becomes 30ms, and the solver gives up instantly
+    #: looking for all the world like a hard instance.
+    SAVILEROW_BACKENDS = {
+        'sat': {
+            'bin_option': '-satsolver-bin',
+            'timeout_option': '--time={value}',
+            'timeout_scale': 1,
+            # Savile Row drives the optimisation loop itself when the backend is a
+            # SAT solver, so it can record each improving objective as it goes.
+            # Every other backend optimises internally, leaving SR nothing to see.
+            'records_objectives': True,
+        },
+        'minion': {
+            'bin_option': '-minion-bin',
+            # Minion takes no time limit of its own here: -timelimit is enough.
+            'timeout_option': None,
+            'timeout_scale': 1,
+            'records_objectives': False,
+        },
+        'ortools': {
+            # SR calls OR-Tools through its "standard FlatZinc" route, so the
+            # generic -fzn-bin names the binary; Gecode and Chuffed have their own.
+            'bin_option': '-fzn-bin',
+            'timeout_option': '--time_limit={value}',  # an Abseil flag, seconds
+            'timeout_scale': 1,
+            'records_objectives': False,
+        },
+        'gecode': {
+            'bin_option': '-gecode-bin',
+            'timeout_option': '-time {value}',  # "time (in ms) cutoff"
+            'timeout_scale': 1000,
+            'records_objectives': False,
+        },
+        'chuffed': {
+            'bin_option': '-chuffed-bin',
+            # Named --time-out but documented "Time out in milliseconds".
+            'timeout_option': '--time-out {value}',
+            'timeout_scale': 1000,
+            'records_objectives': False,
+        },
     }
+
+    def records_intermediate_objectives(self, solver_name: str) -> bool:
+        """Whether this solver's backend writes the intermediate-objective file.
+
+        True only for Savile Row's SAT arm, which is the one configuration where
+        Savile Row runs the optimisation loop and can report improving objectives
+        as it finds them. Callers use this to avoid naming (and clearing) a file
+        that will never be written; with no such file, continue-scan falls back to
+        the injected solution extractor. Resolves through
+        :meth:`get_tune_backend`, so the Conjure path answers for the kissat
+        solve it delegates to, and non-savilerow solvers answer False.
+        """
+        backend_solver = self.get_tune_backend(solver_name)
+        if self.get_solver_type(backend_solver) != 'savilerow':
+            return False
+        backend = self.get_solver_config(backend_solver).get('backend', 'sat')
+        spec = self.SAVILEROW_BACKENDS.get(backend)
+        return bool(spec and spec['records_objectives'])
 
     def build_savilerow_command(self, model_path: str, param_path: str,
                                use_srjava: bool = False,
@@ -54,25 +124,28 @@ class CommandBuilderMixin:
             objective_file_path: path for intermediate objective values file (default: obj.txt)
             extra_options: additional command line options to pass to Savile Row
             solver_name: name of the solver configuration to use (default: 'kissat').
-                The backend is a property of this config: ``backend: minion``
-                uses its tune presets' minion_args and Minion's timeout dialect,
-                ``backend: ortools`` uses ortools_args and drives a FlatZinc
-                solver (optionally named by ``fzn_bin``), and no ``backend:`` key
-                means the kissat SAT arg-set.
+                The backend is a property of this config, named by its
+                ``backend:`` key and described by ``SAVILEROW_BACKENDS``: it
+                selects the arg-set key, the solver's own timeout dialect, and
+                the flag that names its binary. No ``backend:`` key means the
+                kissat SAT backend, which is what every pre-existing config
+                relies on.
             tune: name of a ``tune:`` preset to apply instead of the config's
                 ``default_tune`` (kissat: 'safe'/'bare'/'srdefault'/'gac';
-                minion: 'bare'). The preset supplies this backend's arg-set
-                (sat_args for kissat, minion_args for minion, ortools_args for
-                or-tools). A name that is unknown or lacks this backend's arg key
-                falls back to ``default_tune``. This is the savilerow arm of the
-                same ``--tune`` dial fd uses for its search presets.
+                minion: 'bare'). The preset supplies this backend's arg-set,
+                under the key ``<backend>_args`` - sat_args, minion_args,
+                ortools_args, and so on. A name that is unknown or lacks this
+                backend's arg key falls back to ``default_tune``. This is the
+                savilerow arm of the same ``--tune`` dial fd uses for its search
+                presets.
 
         Returns:
             Complete command as list of strings.
 
         Raises:
-            ModelRegistryError: If savilerow solver not found in config, or the
-                resolved tune has no arg-set for this backend.
+            ModelRegistryError: If savilerow solver not found in config, if the
+                config names a backend that is not in ``SAVILEROW_BACKENDS``, or
+                if the resolved tune has no arg-set for this backend.
         """
         solver_config = self.get_solver_config(solver_name)
 
@@ -80,7 +153,21 @@ class CommandBuilderMixin:
         # minion` selects the minion backend config. This replaced the old
         # cross-cutting `--minion` boolean. Absent means the kissat SAT backend,
         # which is what every pre-existing config relies on.
+        #
+        # An unrecognised name is an error rather than a fallback. The lenient
+        # `_effective_tune` lookup below can afford to shrug at a typo because a
+        # wrong tune still runs the right solver; a typo'd backend would silently
+        # build the SAT arm's argv - a run that succeeds while comparing the wrong
+        # solver, which is worse than no run at all. Same reasoning as
+        # `is_valid_tune`, applied one level up.
         backend = solver_config.get('backend', 'sat')
+        spec = self.SAVILEROW_BACKENDS.get(backend)
+        if spec is None:
+            known = ', '.join(sorted(self.SAVILEROW_BACKENDS))
+            raise ModelRegistryError(
+                f"Solver '{solver_name}' declares unknown backend '{backend}' "
+                f"(known backends: {known})"
+            )
 
         # Choose command variant
         if use_srjava:
@@ -100,13 +187,14 @@ class CommandBuilderMixin:
                     self._savilerow_native_warning_shown = True
                 command = solver_config['command']
 
-        # Choose the argument set from the active tune preset. kissat presets
-        # carry sat_args, minion presets carry minion_args, or-tools presets
-        # carry ortools_args; a tune that is unknown or lacks this backend's key
-        # falls back to default_tune (the lenient behaviour the fd builder uses
-        # too). The model-default tune is resolved by the caller, so `tune` here
-        # is already the effective name.
-        arg_key = self.SAVILEROW_ARG_KEYS.get(backend, 'sat_args')
+        # Choose the argument set from the active tune preset. Each backend reads
+        # its own key, named after it: sat_args, minion_args, ortools_args, and so
+        # on. Deriving the name rather than tabulating it is what lets a new
+        # backend arrive without touching this line. A tune that is unknown or
+        # lacks this backend's key falls back to default_tune (the lenient
+        # behaviour the fd builder uses too). The model-default tune is resolved
+        # by the caller, so `tune` here is already the effective name.
+        arg_key = f'{backend}_args'
         tunes = solver_config.get('tune', {})
         tune_name = self._effective_tune(solver_config, tune, arg_key)
         preset = tunes.get(tune_name, {})
@@ -115,44 +203,41 @@ class CommandBuilderMixin:
                 f"Solver '{solver_name}' tune '{tune_name}' has no {arg_key}"
             )
         args = preset[arg_key].copy()
-        if backend == 'sat':
-            # Add objective recording arguments only when needed. This is a SAT
-            # facility: Savile Row records intermediate objectives as it drives
-            # its own optimisation loop over the SAT solver. A FlatZinc backend
-            # optimises internally, so there is nothing for it to record.
-            if objective_file_path is not None:
-                args.extend(["-record-intermediate-objective-values", objective_file_path])
+        if spec['records_objectives'] and objective_file_path is not None:
+            # Only the SAT arm has intermediate objectives to record, because it
+            # is the only one where Savile Row runs the optimisation loop rather
+            # than the solver. Asking any other backend for them names a file that
+            # is never written.
+            args.extend(["-record-intermediate-objective-values", objective_file_path])
 
-        # A FlatZinc backend needs the solver binary named when it is not the one
-        # Savile Row assumes. Left unset the SR default applies, so the registry
-        # never has to bake in one machine's binary name.
-        fzn_bin = solver_config.get('fzn_bin')
-        if fzn_bin:
-            args.extend(["-fzn-bin", fzn_bin])
+        # Name the backend's binary only when the config pins one. Each backend
+        # has its own flag for this (-fzn-bin, -gecode-bin, -minion-bin, ...), and
+        # left unset Savile Row's default applies - so the registry never has to
+        # bake one machine's build into a shared config.
+        solver_bin = solver_config.get('solver_bin')
+        if solver_bin:
+            args.extend([spec['bin_option'], solver_bin])
 
         # Add timeout arguments
         if timeout is None:
             timeout = solver_config['default_timeout']
 
-        # Each backend spells its own time limit differently. Savile Row's
-        # -timelimit covers translation plus solving; the pass-through gives the
-        # solver its own budget so it stops itself rather than being killed.
         if timeout is not None:
-            if backend == 'minion':
-                # For minion, just use -timelimit (no solver-options needed)
-                args.extend(["-timelimit", str(timeout)])
-            elif backend == 'ortools':
-                # fzn-cp-sat takes --time_limit in seconds (an Abseil flag).
-                args.extend([
-                    "-solver-options", f"--time_limit={timeout}",
-                    "-timelimit", str(timeout)
-                ])
-            else:
-                # For SAT solver (kissat), use both -solver-options and -timelimit
-                args.extend([
-                    "-solver-options", f"--time={timeout}",
-                    "-timelimit", str(timeout)
-                ])
+            # The solver's own limit, in whatever flag and unit that solver
+            # speaks. A config may override the dialect (or set it to null to
+            # suppress it) without the core having to learn a new backend.
+            option = solver_config.get('solver_timeout_option', spec['timeout_option'])
+            if option:
+                scale = spec['timeout_scale']
+                # Left untouched when the solver already speaks seconds, so those
+                # argvs keep their exact previous form (--time=45, never 45.0).
+                value = timeout if scale == 1 else int(timeout * scale)
+                args.extend(["-solver-options", option.format(value=value)])
+            # Savile Row's own limit covers translation plus solving and is always
+            # in seconds. Always added, so a backend with no limit of its own is
+            # still bounded - and one that has its own stops itself and reports,
+            # rather than being killed with nothing to show.
+            args.extend(["-timelimit", str(timeout)])
 
         # Add extra options if provided
         if extra_options:

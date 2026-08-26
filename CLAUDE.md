@@ -118,6 +118,21 @@ else the model's pinned `tune:` from `models.yaml`, else the backend's `default_
 key-less tune silently falls back to `default_tune`, which is why `is_valid_tune()`
 exists for a CLI to turn a typo into an explicit error before that leniency hides it.
 
+**A Savile Row backend is one row in `SAVILEROW_BACKENDS`, and nothing else.** The
+table in `command_builders.py` holds the whole description of each backend (`sat`,
+`minion`, `ortools`, `gecode`, `chuffed`) — its binary flag, its own timeout flag
+and unit, and whether it records intermediate objectives. The arg-set key is
+derived (`<backend>_args`), never tabulated. Adding a sixth backend must stay a
+one-row change; if you find yourself writing `if backend == ...` in the builder,
+the fact belongs in the row instead. Unlike an unknown *tune*, an unknown
+*backend* raises: a wrong tune still runs the right solver, but a typo'd backend
+would silently build the SAT argv and measure a different solver than the one
+asked for. **`timeout_scale` is load-bearing** — Gecode and Chuffed take
+milliseconds without saying so, and an unscaled limit fails silently as a solver
+that gives up instantly. Only the SAT arm records objectives, so
+`_generate_objective_file_path` returns `None` elsewhere and continue-scan relies
+on the injected solution extractor (see `docs/timing-model.md`).
+
 **`detect_solver_from_command` is order-sensitive.** `upfplan` must be matched before
 the engine names, because a UPF command embeds its engine (`-s fast-downward`) and
 would otherwise be parsed by the FD extractor, which can't read upfplan's plan format.

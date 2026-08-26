@@ -56,9 +56,14 @@ solvers:
     default_timeout: 600
     description: SAT backend driven through Savile Row
 
-  # The three Savile Row backends, with tune presets, for the command builder
-  # tests. Separate from `kissat` above so that adding them cannot perturb the
-  # tests which rely on that entry having no presets.
+  # The Savile Row backends, with tune presets, for the command builder tests.
+  # Separate from `kissat` above so that adding them cannot perturb the tests
+  # which rely on that entry having no presets.
+  #
+  # One entry per backend, plus two that pin a solver binary. Two, because the
+  # flag that names the binary differs per backend (-fzn-bin vs -gecode-bin), so
+  # a single pinned entry could not tell a per-backend flag apart from a
+  # hardcoded one.
   srsat:
     # No `backend:` key at all -- the shape every pre-existing SAT config has.
     solver_type: savilerow
@@ -103,15 +108,45 @@ solvers:
           - "-or-tools"
         description: OR-Tools CP-SAT backend
 
-  srortoolsnamed:
-    # Same, but pinning the FlatZinc binary by name.
+  srgecode:
+    solver_type: savilerow
+    command: savilerow
+    extensions:
+      - .eprime
+    default_timeout: null
+    backend: gecode
+    default_tune: default
+    tune:
+      default:
+        gecode_args:
+          - "-run-solver"
+          - "-gecode"
+        description: Gecode FlatZinc backend
+
+  srchuffed:
+    solver_type: savilerow
+    command: savilerow
+    extensions:
+      - .eprime
+    default_timeout: null
+    backend: chuffed
+    default_tune: default
+    tune:
+      default:
+        chuffed_args:
+          - "-run-solver"
+          - "-chuffed"
+        description: Chuffed FlatZinc backend
+
+  srortoolsbin:
+    # Same as srortools, but pinning the solver binary by name.
     solver_type: savilerow
     command: savilerow
     extensions:
       - .eprime
     default_timeout: null
     backend: ortools
-    fzn_bin: fzn-ortools
+    solver_bin: fzn-ortools
     default_tune: default
     tune:
       default:
@@ -119,3 +154,46 @@ solvers:
           - "-run-solver"
           - "-or-tools"
         description: OR-Tools CP-SAT backend, binary pinned
+
+  srgecodebin:
+    # The same pin on a different backend, which must reach a different flag.
+    # Also carries a timeout-dialect override, so one entry covers both config
+    # escape hatches: the flag name is the config's to change, while the unit
+    # stays the solver's (still milliseconds here).
+    solver_type: savilerow
+    command: savilerow
+    extensions:
+      - .eprime
+    default_timeout: null
+    backend: gecode
+    solver_bin: fzn-gecode-6
+    solver_timeout_option: "-overall-time {value}"
+    default_tune: default
+    tune:
+      default:
+        gecode_args:
+          - "-run-solver"
+          - "-gecode"
+        description: Gecode backend, binary pinned
+
+  srbadbackend:
+    # A typo'd backend name: must be rejected, not silently run as SAT.
+    solver_type: savilerow
+    command: savilerow
+    extensions:
+      - .eprime
+    default_timeout: null
+    backend: ortoolz
+    default_tune: default
+    tune:
+      default:
+        # Carries sat_args too, which is what makes the silent-fallback failure
+        # possible at all: without them the mistake would surface as a missing
+        # arg-set rather than as a wrong-but-working command line.
+        sat_args:
+          - "-run-solver"
+          - "-sat"
+        ortools_args:
+          - "-run-solver"
+          - "-or-tools"
+        description: deliberately misspelled backend
