@@ -13,7 +13,28 @@ unconfigured pipeline. A consumer registers its scoring (see :mod:`objective`)
 and its packaging paths (see :mod:`model_registry`) once at its own import time.
 """
 
-__version__ = "0.3.0"
+# Read back from the installed distribution metadata; the version itself is
+# declared once, in pyproject.toml. There is deliberately no literal here to
+# drift from it - the failure being avoided is a release where the metadata says
+# one thing and `__version__` another, each individually plausible and nothing
+# catching the disagreement.
+#
+# Resolved eagerly rather than behind a PEP 562 `__getattr__`: the lookup scans
+# sys.path for a matching .dist-info, which costs a fraction of a millisecond,
+# and this module already imports psutil, PyYAML and every solver backend below.
+# Deferring it would save nothing measurable against that.
+#
+# The fallback fires only in a source tree that was never installed. Note an
+# *editable* install pins its .dist-info at install time, so a checkout whose
+# version has moved on still reports the older one here until it is reinstalled
+# - the price of single-sourcing from metadata rather than from a literal.
+try:
+    from importlib.metadata import PackageNotFoundError as _PackageNotFoundError
+    from importlib.metadata import version as _version
+
+    __version__ = _version("solver-support")
+except _PackageNotFoundError:  # a source tree, never installed
+    __version__ = "0+unknown"
 
 # --- model registry (loader + command builders + packaging injection) ---
 from .model_registry import (

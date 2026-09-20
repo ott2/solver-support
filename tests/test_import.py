@@ -16,6 +16,26 @@ def test_public_api_present():
         assert hasattr(solver_support, name), f"missing public name: {name}"
 
 
+def test_version_is_single_sourced_from_the_distribution():
+    """``__version__`` is read back from metadata, never a literal beside it.
+
+    The version is declared once, in ``pyproject.toml``. The failure this guards
+    is a release where the installed metadata says one thing and ``__version__``
+    another -- each individually plausible, so nothing catches the disagreement.
+
+    Skipped when the package is not installed at all, which is the one case the
+    ``0+unknown`` fallback exists for.
+    """
+    from importlib.metadata import PackageNotFoundError, version
+
+    try:
+        declared = version("solver-support")
+    except PackageNotFoundError:
+        pytest.skip("solver-support is not installed; nothing to agree with")
+
+    assert solver_support.__version__ == declared
+
+
 def test_core_ships_unwired_objective():
     """With no extractor registered, every objective route yields None."""
     from solver_support import objective

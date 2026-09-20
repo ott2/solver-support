@@ -11,10 +11,16 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "solver-support"
-# Single-sourced from solver_support.__version__, so a release bump touches one
-# line and the installed metadata can never disagree with what the package
-# reports at runtime.
-dynamic = ["version"]
+# The single source of the version. `solver_support.__version__` reads it back
+# from the installed distribution metadata, so there is no literal in the
+# package to drift from this one.
+#
+# Static rather than `dynamic = ["version"]` with a `{attr = ...}` pointing into
+# the package: PEP 621 treats `version` as a static field, and `dynamic` is the
+# escape hatch for a version that genuinely cannot be known without building.
+# Ours can. Carrying a `.devN` suffix between releases keeps the working tree
+# from claiming a version that is already tagged and published.
+version = "0.3.1.dev0"
 description = "Generic Conjure / Savile Row / Fast Downward / SymK / ENHSP / UPF solver pipeline"
 readme = "README.md"
 requires-python = ">=3.9"
@@ -71,9 +77,6 @@ dev = [
 
 [tool.setuptools]
 zip-safe = false
-
-[tool.setuptools.dynamic]
-version = {attr = "solver_support.__version__"}
 
 [tool.setuptools.packages.find]
 include = ["solver_support*"]
