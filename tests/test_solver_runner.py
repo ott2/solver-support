@@ -605,8 +605,9 @@ class TestSolverRunnerEnhancedFeatures:
             summary_file = Path(tmpdir) / "test.summary"
             runner = SolverRunner(summary_file=summary_file, instance="test")
             
-            # Add a successful phase
-            mock_result = SolverResult(["echo"], 0, "test", "", 0.1)
+            # Add a phase that actually produced a solution: a tidy exit alone
+            # no longer implies one (see tests/test_run_summary_success.py).
+            mock_result = SolverResult(["echo"], 0, "Solution found", "", 0.1)
             with patch.object(runner, 'run', return_value=mock_result):
                 runner.run_phase("solving", ["echo", "test"])
             

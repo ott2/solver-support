@@ -105,17 +105,49 @@ _NON_SOLVING_PHASES = frozenset({"translation", "modelling", "visualisation"})
 # visualiser or .sol export would silently flip a solved run to success=False.)
 _OPTIONAL_PHASES = frozenset({"visualisation", "export"})
 
-# final_status values the orchestrator uses to mean "this run did not produce a
-# solution / could not run". On these, overall success is False regardless of
-# whether each individual subprocess exited 0 — a solver that runs cleanly but
-# yields no solution (all horizons UNSAT, or a planner that returns no plan) is
-# not a success. `final_status` is the orchestrator's verdict; `all(phase.success)`
-# only knows that subprocesses didn't crash, so the verdict wins. See
-# [[upf-noplan-success-reporting]] and docs/server-harness.md.
-# 'hlim' (horizon scan exhausted its budget without deciding) is a no-solution
-# outcome too, so it also forces success False; it is kept as a distinct status
-# string so consumers can tell "ran out of horizons" from a genuine failure.
-_FAILURE_STATUSES = frozenset({"failed", "launch-failed", "hlim"})
+# --- what a run concluded, and why it stopped ---
+#
+# `final_status` alone cannot answer "did this run learn anything?", because it
+# conflates two independent questions. 'timeout' covers both a run that found a
+# solution before the budget ran out and one that found nothing; 'failed' covers
+# both a planner proving no plan exists and a crash. So the two questions are
+# recorded separately:
+#
+#   outcome      what was learned:  solved / unsat / unknown / error
+#   stop_reason  why it ended:      complete / time / horizons / interrupt / error
+#
+# `final_status` keeps its current meaning and is untouched - it is the
+# orchestrator's own label, and consumers key on it.
+OUTCOMES = ('solved', 'unsat', 'unknown', 'error')
+STOP_REASONS = ('complete', 'time', 'horizons', 'interrupt', 'error')
+
+# A run succeeded if it produced a DEFINITIVE ANSWER in the budget it was given
+# - a solution, or a sound proof that none exists. Both answer the question the
+# run was asked; 'unknown' and 'error' do not. Note this is decided on the
+# outcome and not on exit codes: a planner proving unsatisfiability exits
+# non-zero and its phase records success=False, yet the run succeeded.
+_SUCCESS_OUTCOMES = frozenset({'solved', 'unsat'})
+
+# final_status values where the search RAN TO COMPLETION, so "no solution" can
+# be a verdict rather than an interruption. On any other status the search
+# stopped early and the outcome can only be 'unknown', however complete the
+# model - which is what stops 'hlim' being read as a proof. ('failed' is here
+# because that is the status a planner's proven-unsat arrives under: it exits
+# non-zero, having answered the question.)
+_COMPLETED_STATUSES = frozenset({"done", "success", "failed"})
+
+# final_status -> why the run stopped. Statuses absent here leave stop_reason
+# empty rather than guessing: an unrecognised label is a consumer's own, and
+# inventing a reason for it would put words in its mouth.
+_STOP_REASONS_BY_STATUS = {
+    "done": "complete",
+    "success": "complete",
+    "failed": "complete",
+    "launch-failed": "error",
+    "timeout": "time",
+    "hlim": "horizons",
+    "stopped": "interrupt",
+}
 
 
 @dataclass
@@ -136,6 +168,12 @@ class RunSummary:
     success: bool = False                   # Overall success
     solution_found: bool = False            # Whether solution was found
     final_status: str = ""                  # Final status message
+    # What the run concluded and why it stopped - the two questions final_status
+    # conflates (see OUTCOMES / STOP_REASONS above). Derived by finalize();
+    # empty on a summary that was never finalized, and on one loaded from a file
+    # written before these existed.
+    outcome: str = ""                       # solved / unsat / unknown / error
+    stop_reason: str = ""                   # complete / time / horizons / interrupt / error
     score: Optional[int] = None             # Total score the model reported (scored/upf models only)
     startat: Optional[int] = None           # Starting horizon for Savile Row models (if specified)
     stopat: Optional[int] = None            # Highest horizon tried, if the default cap (100) was overridden
@@ -177,8 +215,42 @@ class RunSummary:
         """
         self.success = all(p.success for p in self.required_phases)
 
-    def finalize(self, final_status: str = "done") -> None:
-        """Finalize the summary with end time and overall success status."""
+    def _derive_outcome(self, final_status: str, proves_unsat: bool,
+                        has_timeout_solution: bool) -> str:
+        """What this run learned: solved / unsat / unknown / error."""
+        # A solution in hand wins over any status label: a run that solved the
+        # instance and was then interrupted, or that banked an anytime solution
+        # before its budget expired, still solved it.
+        if self.solution_found or has_timeout_solution:
+            return 'solved'
+
+        if final_status == "launch-failed":
+            return 'error'
+
+        if final_status in _COMPLETED_STATUSES:
+            # The search finished and produced nothing. From a model that
+            # decides the problem that IS the answer; from any other model it
+            # means something went wrong, because a bounded model that finishes
+            # unsolved has not concluded anything -- it has merely stopped.
+            return 'unsat' if proves_unsat else 'error'
+
+        # 'timeout', 'hlim', 'stopped', or a label this core does not know: the
+        # search stopped early. Nothing was decided, and no completeness of the
+        # model can change that -- refuting horizons 1..N says nothing about
+        # N+1, which is exactly why 'hlim' must never become 'unsat'.
+        return 'unknown'
+
+    def finalize(self, final_status: str = "done",
+                 proves_unsat: bool = False) -> None:
+        """Finalize the summary: end time, outcome, stop reason, success.
+
+        ``proves_unsat`` says whether this run's model is a complete decision
+        procedure, i.e. whether its "no solution" is a sound proof. The core
+        cannot know that from the output - a bounded CP model and a planner print
+        the same thing - so the caller supplies it, normally from the registry's
+        ``get_proves_unsat``. Left False, a no-solution run is never concluded
+        unsat, which is the safe direction: understating what was proved.
+        """
         self.end_time = datetime.now()
         self.final_status = final_status
 
@@ -191,23 +263,19 @@ class RunSummary:
             for phase in self.phases
         )
 
-        if final_status in _FAILURE_STATUSES:
-            # The orchestrator already judged this run a failure (no solution
-            # produced, or the tool could not be launched). Don't let cleanly
-            # exiting subprocesses (e.g. all-UNSAT horizons) override that — a
-            # run that found no solution is not a success.
-            self.success = False
-        elif self.phases:
-            # Overall success is decided by the REQUIRED phases only: best-effort
-            # post-processing (visualisation/.sol export) is non-fatal and must
-            # not fail an otherwise-solved run. A valid timeout solution also
-            # counts (the final solving horizon itself shows as timed-out).
-            required = self.required_phases
-            self.success = (bool(required)
-                            and all(p.success for p in required)) or has_timeout_solution
-        else:
-            self.success = False
-        
+        self.outcome = self._derive_outcome(
+            final_status, proves_unsat, has_timeout_solution)
+        self.stop_reason = _STOP_REASONS_BY_STATUS.get(final_status, "")
+        # Decided on the answer, not on exit codes. The previous rule -- "no
+        # declared failure status AND every required phase exited 0" -- called a
+        # run successful whenever its subprocesses were tidy, so a horizon scan
+        # that ran out of time having found nothing reported success=True: the
+        # solvers had each stopped themselves cleanly at the limit they were
+        # given. Under this rule that run is 'unknown', and a planner's
+        # proven-unsat (which exits non-zero) is a success.
+        self.success = self.outcome in _SUCCESS_OUTCOMES
+
+
         # Extract the highest score from any phase that has one
         scores = []
         for phase in self.phases:

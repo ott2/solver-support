@@ -17,8 +17,15 @@ These are pure-Python tests on :meth:`RunSummary.finalize` (no solver binaries),
 so the contract is pinned cheaply and any new solver that plugs into the same
 summary machinery is covered automatically:
 
-  * ``final_status`` is the orchestrator's verdict and wins: a failure status is
-    never a success, regardless of subprocess exit codes;
+  * a run succeeds when it produced a DEFINITIVE ANSWER -- a solution, or a
+    sound proof that none exists. Nothing else counts;
+  * clean subprocess exits never imply a solution. This is the false-success bug
+    above, and its sharpest form is a horizon scan that runs out of time: every
+    solver stopped itself tidily at the limit it was given, so every phase
+    exited 0, and the run learned nothing;
+  * a planner's proven-unsat IS a success even though it exits non-zero -- but
+    only for a model that can prove it (``proves_unsat``), never for a bounded
+    CP model whose "no solution" is about the bound;
   * only REQUIRED phases decide success; visualisation/export never do;
   * an anytime run that banked a solution before timing out still succeeds.
 """
@@ -43,9 +50,11 @@ def _summary(*phases):
 # --- the core verdict: final_status wins over clean subprocess exits ----------
 
 def test_solved_run_is_success():
-    s = _summary(_phase("translation", True), _phase("solving", True))
+    s = _summary(_phase("translation", True),
+                 _phase("solving", True, solution_found=True))
     s.finalize("done")
     assert s.success is True
+    assert s.outcome == "solved"
 
 
 def test_no_solution_but_clean_exit_is_not_success():
@@ -83,7 +92,7 @@ def test_no_phases_is_not_success():
 def test_optional_phase_failure_does_not_fail_a_solved_run(optional_name):
     s = _summary(
         _phase("translation", True),
-        _phase("solving", True),
+        _phase("solving", True, solution_found=True),
         _phase(optional_name, False),  # best-effort post-processing failed
     )
     s.finalize("done")
@@ -120,10 +129,53 @@ def test_timeout_without_solution_is_not_success():
     assert s.success is False
 
 
-# --- a custom non-failure status still computes over required phases ----------
+# --- a custom status is judged on the answer, like any other ------------------
 
-def test_custom_status_with_passing_required_phase_is_success():
+def test_custom_status_with_a_solution_is_success():
     # Mirrors test_solver_runner.test_finalize_summary_success ("completed").
-    s = _summary(_phase("solving", True))
+    s = _summary(_phase("solving", True, solution_found=True))
     s.finalize("completed")
     assert s.success is True
+
+
+def test_custom_status_without_a_solution_is_not_success():
+    """A status the core does not know buys no free pass.
+
+    Previously any label outside the declared failure list computed success
+    from subprocess exit codes, so a consumer's own "completed" reported a
+    solved run on the strength of a tidy exit alone.
+    """
+    s = _summary(_phase("solving", True))
+    s.finalize("completed")
+    assert s.success is False
+    assert s.outcome == "unknown"
+
+
+# --- proven unsat is an answer, and needs the model to be able to give it ------
+
+def test_planner_proven_unsat_is_success():
+    """Exits non-zero, finalizes 'failed', and has answered the question."""
+    s = _summary(_phase("translation", True), _phase("solving", False))
+    s.finalize("failed", proves_unsat=True)
+    assert s.outcome == "unsat"
+    assert s.success is True
+
+
+def test_bounded_model_finding_nothing_is_never_unsat():
+    """The same status from a model that cannot prove it is an error, not a verdict."""
+    s = _summary(_phase("translation", True), _phase("solving", False))
+    s.finalize("failed", proves_unsat=False)
+    assert s.outcome == "error"
+    assert s.success is False
+
+
+def test_horizon_limit_is_not_unsat_even_for_a_complete_model():
+    """Running out of horizons decides nothing, whatever the model can prove.
+
+    Refuting horizons 1..N says nothing about N+1, so 'hlim' must never be
+    promoted to a proof by the capability flag.
+    """
+    s = _summary(_phase("solving-horizon-100", True))
+    s.finalize("hlim", proves_unsat=True)
+    assert s.outcome == "unknown"
+    assert s.success is False

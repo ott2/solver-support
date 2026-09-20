@@ -227,14 +227,15 @@ class TestRunSummary:
         summary.start_time = datetime(2025, 6, 18, 12, 0, 0)
         
         phase1 = PhaseResult(name="translation", success=True)
-        phase2 = PhaseResult(name="solving", success=True)
+        phase2 = PhaseResult(name="solving", success=True,
+                             solver_stats={"solution_found": True})
         summary.add_phase(phase1)
         summary.add_phase(phase2)
-        
+
         summary.finalize("completed")
-        
+
         assert summary.final_status == "completed"
-        assert summary.success is True  # All phases succeeded
+        assert summary.success is True  # A solution was produced
         assert summary.end_time is not None
     
     def test_finalize_with_failure(self):
