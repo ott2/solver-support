@@ -37,13 +37,13 @@ SolverResult(command, returncode, stdout, stderr, duration,
 
 Three easily-confused numbers:
 
-- `default_timeout` (a `SolverRunner` parameter) — the *limit*;
+- `timeout` (a `SolverRunner` parameter) — the *limit*;
 - `duration` (a `SolverResult` field) — the *actual* time it ran, whether it
   finished or was killed;
 - `timed_out` (a `SolverResult` field) — whether that limit was hit.
 
 ```python
-runner = SolverRunner(default_timeout=10.0)
+runner = SolverRunner(timeout=10.0)
 
 runner.run(['sleep', '3'])    # duration ~3.0,  timed_out False, returncode 0
 runner.run(['sleep', '15'])   # duration ~10.0, timed_out True,  returncode -1
@@ -87,7 +87,7 @@ SolverResult(ls /nonexistent) -> FAILED (rc=1, t=0.01s)
 ```python
 from solver_support import SolverRunner
 
-runner = SolverRunner(default_timeout=30.0)
+runner = SolverRunner(timeout=30.0)
 result = runner.run(['savilerow', 'model.eprime', 'problem.param'])
 
 if result.timed_out:

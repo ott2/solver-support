@@ -146,6 +146,68 @@ wires only the objective-file route will find continue-scan stops at the first
 solving horizon on those backends instead of improving — wire
 `set_raw_objective_from_solution` to use them for optimisation models.
 
+#### The three time limits, and how they relate
+
+A Savile Row run is bounded three times over, and the three are **not**
+interchangeable. Getting the relationship wrong is silent, so it is worth
+stating once:
+
+| limit | set by | what it actually bounds |
+|---|---|---|
+| `-timelimit T` | `build_savilerow_command(timeout=T)` | tailoring. Nominally translation *plus* solving, but Savile Row stops binding it once a solver is running |
+| the solver's own (`--time=S`, …) | `build_savilerow_command(solver_timeout=S)` | search |
+| the external kill | `SolverRunner(timeout=…)` | the whole process tree |
+
+**The first two are consecutive, so they add.** Savile Row tailors, and only
+then launches the solver, so the wall clock the pair permits is `T + S` — not
+`max(T, S)`. Left unsplit (`S` defaulting to `T`) that is `2T`, which is why an
+external kill set at `T` can fire while the toolchain is still inside the limits
+it was given.
+
+**An early kill costs every statistic, not just the tail.** Savile Row
+accumulates `SATVars`, `SATClauses`, `SolverNodes` and the
+`SavileRowTotalTime` / `SolverTotalTime` split in memory and writes the `.info`
+once, after the solver returns. Kill the tree and the output directory holds an
+`.eprime` and perhaps an `.eprime-minion`, never an `.eprime-info`, so
+`extract_savilerow_info` has nothing to read and the run cannot say even whether
+it reached the solver.
+
+So size the external kill with `savilerow_backstop(T, S)` — `T + S` plus grace
+for the flush — and it comes to mean "the toolchain ignored its limits", a
+genuine fault rather than an ordinary and lossy way for a run to end.
+
+**To hold a run to a wall-clock budget, shrink the pair, not the backstop.**
+Give the solver `S = T - (what tailoring will cost)`. The core picks no reserve
+policy: a horizon scan can estimate from the previous horizon's
+`SavileRowTotalTime`, a single-shot run has nothing to estimate from, and only
+the caller knows which it is.
+
+#### Verdicts: refuted vs gave up
+
+`No solution found.` is what Savile Row prints **both** when the solver proved
+there is none and when it stopped at its own limit without deciding, and
+`solution_found` is False for both. The first is a result; the second
+establishes nothing. `SolverStatsExtractor.savilerow_verdict` separates them and
+`_record_savilerow_times` records the answer on the phase as `verdict`:
+
+| verdict | evidence | meaning |
+|---|---|---|
+| `sat` / `unsat` | `SolverSatisfiable` present | decided (`proven_optimal` too, on optimisation models) |
+| `unknown` | absent, with `verdict_reason` | `solver-limit`, `tailoring-limit`, `memory`, `encoding-limit`, or `unexplained` |
+| `error` | `SavileRowUncaughtException` | Savile Row itself failed |
+| `killed` | no `.info` at all | recorded by the caller, from the phase's `timed_out` / `launch_failed` |
+
+Decidedness keys on `SolverSatisfiable` being **present**, deliberately not on
+the solver having run: Savile Row can settle an instance during tailoring and
+never invoke a solver, leaving `SolverTotalTime: 0` beside a perfectly good
+verdict. Testing "did the solver run?" reports every one of those as undecided.
+
+**A horizon's `unsat` is about the bound, not the problem.** It means "not at
+this horizon", never "not at all" — refuting horizons 1..N says nothing about
+N+1. Only the registry knows which models decide the problem itself
+(`get_proves_unsat`), which is why the run-level `outcome` is derived in
+`RunSummary.finalize` and never aggregated from these.
+
 ### Fast Downward / SymK (PDDL models)
 
 - **Shape**: not a horizon scan — one `solving` phase whose A\* (blind) / symbolic
@@ -210,15 +272,46 @@ solving horizon on those backends instead of improving — wire
 - **Split is Savile-Row-only and best-effort.** `savilerow_time` / `solver_time`
   are `None` for planners and for any Savile Row horizon whose `.info` was
   missing.
+- **In-band limits add; the external kill must sit above their sum.** See "the
+  three time limits" above. `savilerow_backstop` derives it from the same
+  numbers the builder gets.
+- **A clean exit is not an answer.** A solver given its own limit stops *itself*
+  and exits 0, so every phase of a fruitless run can succeed. Run success is
+  decided by `outcome`, never by exit codes.
+
+## outcomes
+
+`final_status` answers two questions at once — what was learned, and why the run
+stopped — so `RunSummary.finalize` records them separately. `final_status` keeps
+its meaning; these sit alongside it.
+
+| field | values |
+|---|---|
+| `outcome` | `solved` / `unsat` / `unknown` / `error` |
+| `stop_reason` | `complete` / `time` / `horizons` / `interrupt` / `error` |
+
+`success` is `outcome in {solved, unsat}`: **a run succeeded if it produced a
+definitive answer in the budget it was given.** A proof that no solution exists
+answers the question as surely as a solution does, even though the planner that
+produced it exits non-zero.
+
+`unsat` requires the caller to pass `finalize(..., proves_unsat=True)`, normally
+from the registry's `get_proves_unsat`. The core cannot tell from the output — a
+bounded CP model and a complete planner print the same thing — and left False no
+run is ever concluded unsat, which understates rather than overstates what was
+proved. A status that stopped early (`timeout`, `hlim`, `stopped`) is never
+`unsat` however complete the model.
 
 ## what the core owns
 
 | concern | location |
 |---------|----------|
 | per-solver stat parsers, cost-layer assembly, dispatch | `solver_stats.py` |
+| per-run Savile Row verdict (refuted vs gave up) | `solver_stats.py` (`savilerow_verdict`) |
 | Savile Row `.info` split recording (per horizon) | `solver_horizon.py` (`_record_savilerow_times`) |
 | stats attached to a phase after each solve | `solver_runner.py`, `solver_horizon.py` |
-| the phase model (`RunSummary` / `PhaseResult`) | `run_summary.py` |
+| the phase model (`RunSummary` / `PhaseResult`), outcome and success | `run_summary.py` |
+| relating the in-band limits to the external kill | `command_builders.py` (`savilerow_backstop`) |
 
 Turning these per-phase stats into a unified per-horizon curve for display, a
 single "preprocess" baseline, and plots is the **consumer's** job — it reads the

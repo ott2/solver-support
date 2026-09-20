@@ -152,13 +152,39 @@ not sum to it (JVM start-up, spawn, plan writing are real but unattributed). An 
 reports grounding as `translate_time` (FD/SymK) XOR `grounding_time` (ENHSP), never
 both; `up_compile_time` is additive on the UPF `--build` route only.
 
-**Run success is decided by `final_status`, not by exit codes.** `RunSummary.finalize`
-treats `failed` / `launch-failed` / `hlim` as failures regardless of clean subprocess
-exits — a solver that runs fine but yields no solution is not a success. Best-effort
-phases (`visualisation`, `export`) are excluded from the success decision, and
-non-solving phases (`translation`, `modelling`, `visualisation`) may not set
-`solution_found`. `hlim` (horizon budget exhausted) is deliberately distinct from a
-planner's proven unsat: a bounded CP model *cannot* prove unsatisfiability.
+**Run success is decided by the answer, not by exit codes.** `RunSummary.finalize`
+derives an `outcome` (`solved` / `unsat` / `unknown` / `error`) and a `stop_reason`
+(`complete` / `time` / `horizons` / `interrupt` / `error`), because `final_status`
+conflates the two — `timeout` covers both a banked solution and nothing at all,
+`failed` covers both a proven unsat and a crash. `success` is
+`outcome in {solved, unsat}`: **a run succeeded if it produced a definitive answer
+in the budget it was given**, so a planner's proven unsat succeeds despite exiting
+non-zero. Exit codes cannot decide this in either direction — a solver given its
+own time limit stops *itself* and exits 0, so every phase of a fruitless run can
+succeed. `unsat` is only ever concluded when the caller passes
+`proves_unsat=True` (from the registry's `get_proves_unsat`); a bounded CP model
+*cannot* prove unsatisfiability, and `hlim` is never promoted to a proof however
+complete the model, since refuting horizons 1..N says nothing about N+1.
+Best-effort phases (`visualisation`, `export`) are excluded from the success
+decision, and non-solving phases (`translation`, `modelling`, `visualisation`)
+may not set `solution_found`.
+
+**Savile Row's "no solution" is two different claims.** It prints the same text
+whether the solver refuted the instance or stopped at its own limit, and
+`solution_found` is False for both. `savilerow_verdict` separates them off the
+`.info` file (`sat`/`unsat`/`unknown`+reason/`error`), keyed on `SolverSatisfiable`
+being *present* — not on the solver having run, since Savile Row can decide during
+tailoring and never invoke one. A horizon's `unsat` is about the bound, never the
+problem.
+
+**Savile Row's two in-band limits are consecutive, so they add.** `-timelimit`
+bounds tailoring and the backend's own limit bounds search, one after the other,
+so they jointly permit their *sum* — `2T` when `solver_timeout` is left to default
+to `timeout`. An external kill below that sum fires while the toolchain is still
+inside its limits, and since Savile Row writes its `.info` only at the very end,
+that discards every statistic. Size it with `savilerow_backstop`; to hold a real
+wall-clock budget, shrink the in-band pair instead. The core picks no reserve
+policy — only the caller knows what tailoring will cost.
 
 **Consumer-owned data goes in `extra`, never a declared field.** `RunSummary` and
 `PhaseResult` each carry an `extra` dict for data the core cannot interpret. Declaring
