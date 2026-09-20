@@ -205,6 +205,119 @@ class TestSavileRowInfo:
             tmp_path / "nope.info") == {}
 
 
+class TestSavileRowVerdict:
+    """Refuted vs "gave up": two claims Savile Row prints identically.
+
+    ``No solution found.`` is what Savile Row says both when the solver proved
+    there is none and when it hit its own time limit without deciding, and
+    ``solution_found`` is False for both. The first is a result; the second
+    establishes nothing. Every case below is a key combination taken from real
+    ``.info`` files.
+    """
+
+    def _write_info(self, tmp_path, body):
+        p = tmp_path / "run.param.info"
+        p.write_text(body)
+        return p
+
+    def test_satisfiable_is_sat(self, tmp_path):
+        info = self._write_info(
+            tmp_path, "SolverSatisfiable:1\nSolverTotalTime:21.72\n")
+        assert SolverStatsExtractor.savilerow_verdict(info) == {'verdict': 'sat'}
+
+    def test_unsatisfiable_is_unsat(self, tmp_path):
+        info = self._write_info(
+            tmp_path, "SolverSatisfiable:0\nSolverTotalTime:567.02\n")
+        assert SolverStatsExtractor.savilerow_verdict(info) == {
+            'verdict': 'unsat'}
+
+    def test_decided_during_tailoring_is_still_decided(self, tmp_path):
+        """``SolverTotalTime: 0`` with a verdict: Savile Row settled it itself.
+
+        Savile Row can decide an instance while tailoring and never invoke a
+        solver. Keying decidedness on "did the solver run?" would report every
+        one of these as undecided; keying it on ``SolverSatisfiable`` gets them
+        right.
+        """
+        info = self._write_info(
+            tmp_path,
+            "SolverSatisfiable:0\nSolverTotalTime:0\nSavileRowTotalTime:0.536\n")
+        assert SolverStatsExtractor.savilerow_verdict(info) == {
+            'verdict': 'unsat'}
+
+    def test_solver_hit_its_own_limit(self, tmp_path):
+        """The common ending of a starved horizon: no verdict, SolverTimeOut 1."""
+        info = self._write_info(
+            tmp_path,
+            "SolverTotalTime:43.89\nSolverTimeOut:1\nSavileRowTimeOut:0\n")
+        assert SolverStatsExtractor.savilerow_verdict(info) == {
+            'verdict': 'unknown', 'verdict_reason': 'solver-limit'}
+
+    def test_tailoring_hit_savilerow_limit(self, tmp_path):
+        info = self._write_info(
+            tmp_path,
+            "SavileRowTotalTime:30.0\nSavileRowTimeOut:1\nSolverTimeOut:0\n")
+        assert SolverStatsExtractor.savilerow_verdict(info) == {
+            'verdict': 'unknown', 'verdict_reason': 'tailoring-limit'}
+
+    def test_undecided_with_no_flag_is_unexplained(self, tmp_path):
+        """A minority carry no flag at all - still undecided, just unexplained.
+
+        The absent-verdict test is what catches these; the flags alone would
+        call them decided by omission.
+        """
+        info = self._write_info(
+            tmp_path,
+            "SolverTotalTime:1181.55\nSolverNodes:8853509\n"
+            "SolverTimeOut:0\nSavileRowTimeOut:0\n")
+        assert SolverStatsExtractor.savilerow_verdict(info) == {
+            'verdict': 'unknown', 'verdict_reason': 'unexplained'}
+
+    def test_uncaught_exception_is_error(self, tmp_path):
+        info = self._write_info(
+            tmp_path,
+            "SavileRowTotalTime:0.001\nSavileRowUncaughtException:1\n"
+            "SavileRowTimeOut:0\n")
+        assert SolverStatsExtractor.savilerow_verdict(info) == {
+            'verdict': 'error', 'verdict_reason': 'uncaught-exception'}
+
+    def test_proven_optimum_marked_on_sat(self, tmp_path):
+        info = self._write_info(
+            tmp_path,
+            "SolverSatisfiable:1\nOptimumFound:1\nObjectiveValue:42\n")
+        assert SolverStatsExtractor.savilerow_verdict(info) == {
+            'verdict': 'sat', 'proven_optimal': True}
+
+    def test_incumbent_without_proof_is_sat_not_optimal(self, tmp_path):
+        """A solution in hand, but the solver ran out of budget to better it."""
+        info = self._write_info(
+            tmp_path,
+            "SolverSatisfiable:1\nOptimumFound:0\nObjectiveValue:42\n"
+            "SolverTimeOut:1\n")
+        assert SolverStatsExtractor.savilerow_verdict(info) == {
+            'verdict': 'sat', 'proven_optimal': False}
+
+    def test_unsat_carries_no_optimality_claim(self, tmp_path):
+        """An optimisation model's refuted horizon writes ``OptimumFound: 0``.
+
+        That 0 means "no optimum because no solution", not "an optimum exists
+        and was not proven", so it must not surface as ``proven_optimal``.
+        """
+        info = self._write_info(
+            tmp_path, "SolverSatisfiable:0\nOptimumFound:0\n")
+        assert SolverStatsExtractor.savilerow_verdict(info) == {
+            'verdict': 'unsat'}
+
+    def test_missing_file_returns_empty(self, tmp_path):
+        """No file is not a verdict: the caller decides what absence means.
+
+        It is equally consistent with a kill mid-run and with Savile Row never
+        having run for this horizon, and only the caller can tell those apart.
+        """
+        assert SolverStatsExtractor.savilerow_verdict(
+            tmp_path / "nope.info") == {}
+
+
 _FD_LAYER_OUTPUT = """\
 Done! [0.160s CPU, 0.143s wall-clock]
 [t=0.005230s, 435307568 KB] f = 0, 1 evaluated, 0 expanded

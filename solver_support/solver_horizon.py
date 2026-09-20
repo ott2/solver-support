@@ -261,16 +261,31 @@ class HorizonBasedSolver(Solver):
         wrote the file, or an old cleaned-up run, records neither. Guarded to
         the matching ``solving-horizon-{n}`` phase so it cannot scribble on an
         unrelated phase.
+
+        Also records this horizon's ``verdict`` (see
+        :meth:`SolverStatsExtractor.savilerow_verdict`), which is what separates
+        a horizon that was *refuted* from one that merely ran out of budget -
+        indistinguishable in ``solution_found``, since both are simply False.
         """
         info = SolverStatsExtractor.extract_savilerow_info(f"{param_file}.info")
         times = SolverStatsExtractor.extract_savilerow_info_times(f"{param_file}.info")
-        if not times and not info:
-            return
         phases = self.runner.summary.phases
-        if phases and phases[-1].name == f"solving-horizon-{n}":
-            phases[-1].solver_stats.update(times)
-            if info:
-                phases[-1].solver_stats['savilerow_info'] = info
+        if not (phases and phases[-1].name == f"solving-horizon-{n}"):
+            return
+        phase = phases[-1]
+        if info:
+            phase.solver_stats.update(times)
+            phase.solver_stats['savilerow_info'] = info
+            phase.solver_stats.update(
+                SolverStatsExtractor.savilerow_verdict_from_info(info))
+        elif phase.timed_out or phase.launch_failed:
+            # No ``.info``, but the phase records why: Savile Row was killed
+            # before it could flush (it accumulates every statistic in memory and
+            # writes the file once, after the solver it launched returns). Only
+            # claim ``killed`` when there is that independent evidence - an absent
+            # file is equally consistent with Savile Row never having run for this
+            # horizon at all, and guessing would manufacture a diagnosis.
+            phase.solver_stats['verdict'] = 'killed'
 
     def _build_savilerow_command(self, model_path: str, param_path: str, timeout: Optional[int], obj_file: Optional[Path] = None) -> List[str]:
         """

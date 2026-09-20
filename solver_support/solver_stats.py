@@ -86,6 +86,30 @@ _ENHSP_LAYER_RE = re.compile(r'f\(n\)\s*=\s*([\d.]+)\s*\([^)]*Time:\s*([\d.]+)\)
 _ENHSP_SOLVED_RE = re.compile(r'Problem Solved|Found Plan:')
 
 
+# What a single Savile Row run concluded, derived from its ``.info`` file. The
+# two *decided* verdicts come first: they are the only ones that answer the
+# question the run was asked. ``unknown`` means the search stopped before
+# deciding, ``error`` that Savile Row itself failed.
+#
+# ``killed`` (no ``.info`` at all) is deliberately NOT derivable here: an absent
+# file is equally consistent with Savile Row having been killed mid-run and with
+# its never having been run for this horizon, and the extractor cannot tell those
+# apart from a path. The caller knows - the phase already records ``timed_out`` /
+# ``launch_failed`` - so it is the caller that names a missing file ``killed``.
+SAVILEROW_VERDICTS = ('sat', 'unsat', 'unknown', 'error', 'killed')
+
+# Why a run ended without deciding, keyed by the ``.info`` flag that explains it,
+# in the order they are checked. Savile Row sets at most one of these in practice;
+# the order records which explanation would win if it ever set two, most specific
+# (the solver's own limit) first.
+_SAVILEROW_STOP_FLAGS = (
+    ('SolverTimeOut', 'solver-limit'),
+    ('SavileRowTimeOut', 'tailoring-limit'),
+    ('SolverMemOut', 'memory'),
+    ('SavileRowClauseOut', 'encoding-limit'),
+)
+
+
 class SolverStatsExtractor:
     """Extract structured statistics from solver output."""
 
@@ -425,6 +449,86 @@ class SolverStatsExtractor:
             except (TypeError, ValueError):
                 continue
         return stats
+
+    @staticmethod
+    def savilerow_verdict(info_path) -> Dict[str, Any]:
+        """What a Savile Row run concluded, read from its ``.info`` file.
+
+        Returns ``{'verdict': ...}`` - one of ``sat`` / ``unsat`` / ``unknown`` /
+        ``error`` (see :data:`SAVILEROW_VERDICTS`) - plus ``verdict_reason`` when
+        the run did not decide, and ``proven_optimal`` on a ``sat`` from an
+        optimisation model. ``{}`` when the file is absent or unreadable, which
+        the caller interprets (see the note on ``killed`` in
+        :data:`SAVILEROW_VERDICTS`).
+
+        This exists because "no solution" is two different claims. A refuted run
+        establishes that none exists; a run whose solver hit its own time limit
+        establishes nothing at all - yet Savile Row prints ``No solution found.``
+        for both and the stats have recorded ``solution_found = False`` for both.
+        Conflating them overstates what a scan proved: the frontier horizon of a
+        timed-out scan is usually the undecided kind.
+
+        Note that for a *bounded* model this verdict is about the bound, not the
+        problem: ``unsat`` from one horizon of a horizon scan means "not at this
+        horizon", never "not at all". Only the registry knows which models decide
+        the problem itself (``proves-unsat``), which is why aggregating these into
+        a run-level outcome is the caller's job and not this function's.
+        """
+        info = SolverStatsExtractor.extract_savilerow_info(info_path)
+        if not info:
+            return {}
+        return SolverStatsExtractor.savilerow_verdict_from_info(info)
+
+    @staticmethod
+    def savilerow_verdict_from_info(info: Dict[str, Any]) -> Dict[str, Any]:
+        """:meth:`savilerow_verdict` over an already-parsed ``.info`` mapping.
+
+        Split out so a caller that has already read the file (to record the
+        tailoring/solver split, say) does not parse it a second time.
+        """
+        def _flagged(key: str) -> bool:
+            try:
+                return bool(int(info.get(key)))
+            except (TypeError, ValueError):
+                return False
+
+        # Checked before the verdict: a Savile Row that threw cannot be trusted
+        # to have written a sound one. The two have never been observed together,
+        # so this ordering only decides a case not yet seen in practice.
+        if _flagged('SavileRowUncaughtException'):
+            return {'verdict': 'error', 'verdict_reason': 'uncaught-exception'}
+
+        # `SolverSatisfiable` is written if and only if something DECIDED this
+        # run, and is deliberately not keyed on the solver having run: Savile Row
+        # can settle an instance during tailoring and never invoke a solver at
+        # all, leaving `SolverTotalTime: 0` beside a perfectly good verdict. Those
+        # are decided. Testing "did the solver run?" would misreport every one of
+        # them as undecided.
+        satisfiable = info.get('SolverSatisfiable')
+        if satisfiable is not None:
+            try:
+                decided_sat = bool(int(satisfiable))
+            except (TypeError, ValueError):
+                decided_sat = None
+            if decided_sat is not None:
+                stats: Dict[str, Any] = {
+                    'verdict': 'sat' if decided_sat else 'unsat'}
+                # Optimisation models only: `OptimumFound` separates a proven
+                # optimum from an incumbent the solver ran out of budget to
+                # improve on. Absent entirely for satisfaction models.
+                if decided_sat and 'OptimumFound' in info:
+                    stats['proven_optimal'] = _flagged('OptimumFound')
+                return stats
+
+        # Undecided. Savile Row does flag the reason most of the time - the
+        # common case by far is the solver stopping itself at the limit it was
+        # given, `SolverTimeOut: 1` - so the flags are the primary signal and the
+        # absent-verdict test above is the backstop for the minority that carry
+        # no flag at all.
+        for key, reason in _SAVILEROW_STOP_FLAGS:
+            if _flagged(key):
+                return {'verdict': 'unknown', 'verdict_reason': reason}
+        return {'verdict': 'unknown', 'verdict_reason': 'unexplained'}
 
     @staticmethod
     def extract_fast_downward_stats(stdout: str, stderr: str,

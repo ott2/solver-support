@@ -80,11 +80,13 @@ class TestVerbatimInfo:
 
     def test_verbatim_keys_are_nested_not_flattened(self, solver, tmp_path):
         # Savile Row's CamelCase must not land beside the core's snake_case.
+        # `verdict` is the core's own snake_case vocabulary, derived from the
+        # file rather than copied out of it, so it belongs at the top level.
         sr, phase = solver
         sr._record_savilerow_times(write_info(tmp_path, MINION_INFO), 3)
         assert "SolverNodes" not in phase.solver_stats
         assert set(phase.solver_stats) == {"savilerow_time", "solver_time",
-                                           "savilerow_info"}
+                                           "savilerow_info", "verdict"}
 
     def test_keys_are_verbatim_and_coerced(self, solver, tmp_path):
         sr, phase = solver
@@ -125,3 +127,47 @@ class TestBestEffort:
             write_info(tmp_path, "SolverSatisfiable:0\nSolverTimeOut:1\n"), 3)
         assert phase.solver_stats["savilerow_info"] == {"SolverSatisfiable": 0,
                                                         "SolverTimeOut": 1}
+
+
+class TestVerdictRecording:
+    """The horizon's verdict, recorded beside the times it already kept.
+
+    Without it a refuted horizon and a starved one are indistinguishable in a
+    saved summary: both carry ``solution_found: False`` and nothing else.
+    """
+
+    def test_decided_horizon_records_its_verdict(self, solver, tmp_path):
+        sr, phase = solver
+        sr._record_savilerow_times(write_info(tmp_path, MINION_INFO), 3)
+        assert phase.solver_stats["verdict"] == "sat"
+
+    def test_starved_horizon_records_why_it_gave_up(self, solver, tmp_path):
+        sr, phase = solver
+        sr._record_savilerow_times(
+            write_info(tmp_path, "SolverTotalTime:43.89\nSolverTimeOut:1\n"), 3)
+        assert phase.solver_stats["verdict"] == "unknown"
+        assert phase.solver_stats["verdict_reason"] == "solver-limit"
+
+    def test_killed_only_when_the_phase_says_so(self, solver, tmp_path):
+        """No ``.info`` plus recorded evidence of a kill is ``killed``."""
+        sr, phase = solver
+        phase.timed_out = True
+        sr._record_savilerow_times(tmp_path / "absent.param", 3)
+        assert phase.solver_stats == {"verdict": "killed"}
+
+    def test_launch_failure_also_counts_as_killed(self, solver, tmp_path):
+        sr, phase = solver
+        phase.launch_failed = True
+        sr._record_savilerow_times(tmp_path / "absent.param", 3)
+        assert phase.solver_stats == {"verdict": "killed"}
+
+    def test_absent_info_without_evidence_claims_nothing(self, solver, tmp_path):
+        """The contrast that makes ``killed`` sound.
+
+        A missing file is equally consistent with Savile Row never having run
+        for this horizon. With nothing on the phase to say otherwise, guessing
+        would manufacture a diagnosis, so no verdict is recorded at all.
+        """
+        sr, phase = solver
+        sr._record_savilerow_times(tmp_path / "absent.param", 3)
+        assert "verdict" not in phase.solver_stats
