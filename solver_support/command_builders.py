@@ -21,6 +21,41 @@ from typing import List, Optional
 from .model_registry import ModelRegistryError
 
 
+#: Seconds of slack between the in-band limits and the external kill. Savile Row
+#: needs a moment *after* its own limit fires to write the ``.info`` file (it
+#: accumulates every statistic in memory and flushes once), and Conjure to
+#: translate a solution back. A kill set exactly at the in-band limit races that
+#: flush and generally wins, so the run that was about to report its statistics
+#: reports nothing at all - the failure is worst precisely for the instances
+#: where all the work was tailoring, which are the ones the limit bounded.
+SAVILEROW_FLUSH_GRACE = 30
+
+
+def savilerow_backstop(timeout: int, solver_timeout: Optional[int] = None,
+                       grace: int = SAVILEROW_FLUSH_GRACE) -> int:
+    """The external timeout that cannot preempt Savile Row's own limits.
+
+    Savile Row's ``-timelimit`` and the backend solver's own limit are budgets
+    spent *one after the other* - it tailors, then runs the solver - so the wall
+    clock they jointly permit is their SUM, not the larger of the two. An
+    external kill below that sum will sometimes fire while the toolchain is
+    still inside the limits it was given, and because Savile Row writes its
+    ``.info`` only at the very end, firing early discards every statistic the
+    run had gathered.
+
+    Sized from the same numbers that reach :meth:`build_savilerow_command`, so
+    the two cannot drift apart. Passing this to the runner makes an external
+    kill mean "the toolchain ignored its limits", which is a genuine fault,
+    rather than an ordinary and silently lossy way for a run to end.
+
+    This is a *backstop*, not a wall-clock budget. To hold a run to ``T``
+    seconds of wall clock, do not shrink this - shrink the in-band pair so that
+    their sum is ``T`` (give the solver ``T`` minus what tailoring will cost)
+    and let the backstop sit above it, unreached.
+    """
+    return timeout + (timeout if solver_timeout is None else solver_timeout) + grace
+
+
 class CommandBuilderMixin:
     """The ``build_*_command`` methods mixed into :class:`ModelRegistry`."""
 
@@ -108,7 +143,8 @@ class CommandBuilderMixin:
                                objective_file_path: Optional[str] = None,
                                extra_options: Optional[List[str]] = None,
                                solver_name: str = 'kissat',
-                               tune: Optional[str] = None) -> List[str]:
+                               tune: Optional[str] = None,
+                               solver_timeout: Optional[int] = None) -> List[str]:
         """
         Build a Savile Row command with proper flags for horizon scanning.
 
@@ -120,7 +156,28 @@ class CommandBuilderMixin:
             model_path: path to the model file
             param_path: path to the parameter file
             use_srjava: use Java savilerow instead of savilerow-native
-            timeout: override timeout in seconds (uses default_timeout if None)
+            timeout: Savile Row's own ``-timelimit``, in seconds (uses
+                ``default_timeout`` if None). Covers tailoring *plus* solving,
+                but stops binding once a solver is running - so in practice it
+                bounds tailoring.
+            solver_timeout: the backend solver's own limit, if it should differ
+                from ``timeout``. Defaults to ``timeout``, which is what every
+                caller got before this existed.
+
+                These are two budgets spent one after the other, not one budget
+                named twice: Savile Row tailors, and only then runs the solver.
+                Passing the same number to both grants up to ``2 x timeout`` of
+                wall clock, which is why an external kill set at ``timeout``
+                fires mid-search and takes the statistics with it - Savile Row
+                accumulates them in memory and writes the ``.info`` once, after
+                the solver it launched returns.
+
+                The split is what lets a caller keep a real wall-clock budget:
+                reserve what tailoring will cost and give the solver the rest.
+                The core picks no reserve policy - a horizon scan can measure
+                the previous horizon's ``SavileRowTotalTime``, a single-shot run
+                cannot - so the number is the caller's. See
+                :func:`savilerow_backstop` for sizing the external kill.
             objective_file_path: path for intermediate objective values file (default: obj.txt)
             extra_options: additional command line options to pass to Savile Row
             solver_name: name of the solver configuration to use (default: 'kissat').
@@ -226,12 +283,18 @@ class CommandBuilderMixin:
             # The solver's own limit, in whatever flag and unit that solver
             # speaks. A config may override the dialect (or set it to null to
             # suppress it) without the core having to learn a new backend.
+            #
+            # Defaults to `timeout`, so a caller that says nothing gets exactly
+            # the argv it always got. Note the two limits are consecutive
+            # budgets - Savile Row tailors, then runs the solver - so leaving
+            # them equal permits roughly twice `timeout` of wall clock.
             option = solver_config.get('solver_timeout_option', spec['timeout_option'])
             if option:
                 scale = spec['timeout_scale']
+                budget = timeout if solver_timeout is None else solver_timeout
                 # Left untouched when the solver already speaks seconds, so those
                 # argvs keep their exact previous form (--time=45, never 45.0).
-                value = timeout if scale == 1 else int(timeout * scale)
+                value = budget if scale == 1 else int(budget * scale)
                 args.extend(["-solver-options", option.format(value=value)])
             # Savile Row's own limit covers translation plus solving and is always
             # in seconds. Always added, so a backend with no limit of its own is

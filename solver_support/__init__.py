@@ -25,6 +25,7 @@ from .model_registry import (
     set_resource_root,
     set_user_config_finder,
 )
+from .command_builders import savilerow_backstop, SAVILEROW_FLUSH_GRACE
 
 # --- run configuration singleton ---
 from .global_state import global_state, GlobalState
@@ -85,6 +86,8 @@ __all__ = [
     "set_default_config_path",
     "set_resource_root",
     "set_user_config_finder",
+    "savilerow_backstop",
+    "SAVILEROW_FLUSH_GRACE",
     # run config
     "global_state",
     "GlobalState",

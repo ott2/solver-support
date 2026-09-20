@@ -201,3 +201,59 @@ def test_model_and_param_come_last(registry, solver, _):
     """Savile Row takes the model and param as trailing positionals."""
     cmd = build(registry, solver, timeout=10, objective_file_path="obj.txt")
     assert cmd[-2:] == [MODEL, PARAM]
+
+
+class TestTwoBudgetsNotOne:
+    """``-timelimit`` and the solver's own limit are spent one after the other.
+
+    Savile Row tailors, and only then runs the solver, so the wall clock the two
+    jointly permit is their SUM. Passing one number to both -- which is all the
+    builder could do before ``solver_timeout`` existed -- grants roughly twice
+    what the caller thinks it granted.
+    """
+
+    def test_solver_timeout_defaults_to_timeout(self, registry):
+        """Silence must produce exactly the argv every caller got before."""
+        assert build(registry, "srsat", timeout=45) == build(
+            registry, "srsat", timeout=45, solver_timeout=45)
+
+    def test_the_two_limits_can_differ(self, registry):
+        cmd = build(registry, "srsat", timeout=45, solver_timeout=30)
+        assert solver_options(cmd) == ["--time=30"]
+        assert cmd[cmd.index("-timelimit") + 1] == "45"
+
+    def test_the_split_is_still_scaled_to_the_solver_unit(self, registry):
+        # The reserve is in seconds like everything else in this API; Gecode's
+        # millisecond dialect applies to it exactly as to an unsplit budget.
+        cmd = build(registry, "srgecode", timeout=45, solver_timeout=30)
+        assert solver_options(cmd) == ["-time 30000"]
+        assert cmd[cmd.index("-timelimit") + 1] == "45"
+
+    def test_a_backend_with_no_limit_of_its_own_is_unaffected(self, registry):
+        # Minion takes no limit here, so there is nothing to split; -timelimit
+        # remains its only bound.
+        cmd = build(registry, "srminion", timeout=45, solver_timeout=30)
+        assert solver_options(cmd) == []
+        assert cmd[cmd.index("-timelimit") + 1] == "45"
+
+
+class TestBackstop:
+    """Sizing the external kill so it cannot preempt the in-band limits."""
+
+    def test_backstop_sums_both_budgets(self):
+        from solver_support import savilerow_backstop
+        # Not max(45, 30): the solver's budget starts when tailoring's ends.
+        assert savilerow_backstop(45, 30, grace=5) == 80
+
+    def test_unsplit_budget_is_counted_twice(self):
+        from solver_support import savilerow_backstop
+        # The case that motivates all of this: one number in both flags permits
+        # ~2x that number of wall clock, while the old external kill sat at 1x.
+        assert savilerow_backstop(45, grace=5) == 95
+
+    def test_grace_leaves_room_to_flush(self):
+        from solver_support import savilerow_backstop, SAVILEROW_FLUSH_GRACE
+        # Savile Row writes its .info only after its limit fires, so a kill at
+        # exactly the in-band sum races that write and usually wins.
+        assert savilerow_backstop(45, 30) == 45 + 30 + SAVILEROW_FLUSH_GRACE
+        assert SAVILEROW_FLUSH_GRACE > 0
