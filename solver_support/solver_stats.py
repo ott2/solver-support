@@ -101,12 +101,30 @@ SAVILEROW_VERDICTS = ('sat', 'unsat', 'unknown', 'error', 'killed')
 # Why a run ended without deciding, keyed by the ``.info`` flag that explains it,
 # in the order they are checked. Savile Row sets at most one of these in practice;
 # the order records which explanation would win if it ever set two, most specific
-# (the solver's own limit) first.
+# (the solver's own limit) first. ``memory`` is the *backend* running out; the
+# front end running out is an abort flag below, not one of these.
 _SAVILEROW_STOP_FLAGS = (
     ('SolverTimeOut', 'solver-limit'),
     ('SavileRowTimeOut', 'tailoring-limit'),
     ('SolverMemOut', 'memory'),
     ('SavileRowClauseOut', 'encoding-limit'),
+)
+
+# Savile Row itself did not finish. Checked BEFORE the verdict test - a run that
+# died mid-flight cannot be trusted to have written a sound one - and so, unlike
+# the stop flags above, these outrank a ``SolverSatisfiable`` that is present.
+#
+# Ordered cause before symptom: a JVM heap exhaustion reaches Savile Row's
+# top-level handler, so it sets BOTH ``SavileRowOutOfMemory`` and
+# ``SavileRowUncaughtException``, and "ran out of memory" is the more useful of
+# the two reports. Out-of-memory is ``unknown`` rather than ``error`` because
+# nothing malfunctioned: it is the front-end twin of ``SolverMemOut``, a resource
+# cap that stopped the run before it decided, exactly as the two time limits are
+# a matched ``solver-limit`` / ``tailoring-limit`` pair. ``error`` stays for the
+# case where Savile Row has no account of what went wrong.
+_SAVILEROW_ABORT_FLAGS = (
+    ('SavileRowOutOfMemory', 'unknown', 'tailoring-memory'),
+    ('SavileRowUncaughtException', 'error', 'uncaught-exception'),
 )
 
 
@@ -492,11 +510,14 @@ class SolverStatsExtractor:
             except (TypeError, ValueError):
                 return False
 
-        # Checked before the verdict: a Savile Row that threw cannot be trusted
-        # to have written a sound one. The two have never been observed together,
-        # so this ordering only decides a case not yet seen in practice.
-        if _flagged('SavileRowUncaughtException'):
-            return {'verdict': 'error', 'verdict_reason': 'uncaught-exception'}
+        # Checked before the verdict: a Savile Row that died cannot be trusted to
+        # have written a sound one. An abort has never been observed together
+        # with a verdict, so that half of the ordering only decides a case not
+        # yet seen in practice; the cause-before-symptom half of it decides a
+        # real one, since an out-of-memory sets the exception flag as well.
+        for key, verdict, reason in _SAVILEROW_ABORT_FLAGS:
+            if _flagged(key):
+                return {'verdict': verdict, 'verdict_reason': reason}
 
         # `SolverSatisfiable` is written if and only if something DECIDED this
         # run, and is deliberately not keyed on the solver having run: Savile Row

@@ -193,7 +193,7 @@ establishes nothing. `SolverStatsExtractor.savilerow_verdict` separates them and
 | verdict | evidence | meaning |
 |---|---|---|
 | `sat` / `unsat` | `SolverSatisfiable` present | decided (`proven_optimal` too, on optimisation models) |
-| `unknown` | absent, with `verdict_reason` | `solver-limit`, `tailoring-limit`, `memory`, `encoding-limit`, or `unexplained` |
+| `unknown` | absent, with `verdict_reason` | `solver-limit`, `tailoring-limit`, `memory`, `tailoring-memory`, `encoding-limit`, or `unexplained` |
 | `error` | `SavileRowUncaughtException` | Savile Row itself failed |
 | `killed` | no `.info` at all | recorded by the caller, from the phase's `timed_out` / `launch_failed` |
 
@@ -201,6 +201,23 @@ Decidedness keys on `SolverSatisfiable` being **present**, deliberately not on
 the solver having run: Savile Row can settle an instance during tailoring and
 never invoke a solver, leaving `SolverTotalTime: 0` beside a perfectly good
 verdict. Testing "did the solver run?" reports every one of those as undecided.
+
+**Each limit names the process it bound.** `solver-limit` / `tailoring-limit`
+are the two time limits (see above), and `memory` / `tailoring-memory` are the
+same split for the heap: `SolverMemOut` is the backend, `SavileRowOutOfMemory`
+the JVM running Savile Row. The front-end memory-out is `unknown` and not
+`error` for the same reason its timeout is — a resource cap stopped the run
+before it decided; nothing malfunctioned. It is checked **before** the verdict,
+and before `SavileRowUncaughtException`: one heap exhaustion sets both flags,
+because the `OutOfMemoryError` reaches Savile Row's top-level handler, and the
+cause is a more useful report than the symptom. `error` is then what is left
+when Savile Row has no account of what went wrong.
+
+You will mostly see this flag if your limits are **in band**. A harness that
+caps memory externally (`runsolver` and friends) kills the JVM before it reaches
+its own `-Xmx`, so Savile Row never writes the flag and you get a killed process
+with no statistics instead — the same trade the time limits make. Bounding a run
+from the inside buys diagnostics that killing it from outside destroys.
 
 **A horizon's `unsat` is about the bound, not the problem.** It means "not at
 this horizon", never "not at all" — refuting horizons 1..N says nothing about

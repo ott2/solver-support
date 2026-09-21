@@ -281,6 +281,47 @@ class TestSavileRowVerdict:
         assert SolverStatsExtractor.savilerow_verdict(info) == {
             'verdict': 'error', 'verdict_reason': 'uncaught-exception'}
 
+    def test_out_of_memory_is_reported_by_cause_not_symptom(self, tmp_path):
+        """Both flags are set by one event, and the cause is the useful one.
+
+        A JVM heap exhaustion reaches Savile Row's top-level handler, so the
+        ``.info`` carries ``SavileRowUncaughtException: 1`` beside the memory
+        flag. Reporting the exception says *Savile Row has a bug*; reporting the
+        memory says *this model did not fit*, which is what decides whether a
+        consumer retries at a larger scale or files a fault. Keys verbatim from
+        a real run (Savile Row 1.11.1, ~183 s, exit 1, ``ERROR: Out of Memory``).
+        """
+        info = self._write_info(
+            tmp_path,
+            "SavileRowClauseOut:0\nSavileRowTotalTime:182.786\n"
+            "SavileRowOutOfMemory:1\nSavileRowUncaughtException:1\n"
+            "SavileRowTimeOut:0\n")
+        assert SolverStatsExtractor.savilerow_verdict(info) == {
+            'verdict': 'unknown', 'verdict_reason': 'tailoring-memory'}
+
+    def test_out_of_memory_alone_is_not_unexplained(self, tmp_path):
+        """An ``OutOfMemoryError`` caught and reported cleanly sets one flag.
+
+        Without its own branch this falls past the exception test, finds no stop
+        flag set, and lands on ``unexplained`` - which for a consumer that sets
+        the backend's limit itself reads as the routine solver timeout, turning
+        a fault into a cap.
+        """
+        info = self._write_info(
+            tmp_path,
+            "SavileRowTotalTime:120.5\nSavileRowOutOfMemory:1\n"
+            "SavileRowTimeOut:0\nSolverTimeOut:0\n")
+        assert SolverStatsExtractor.savilerow_verdict(info) == {
+            'verdict': 'unknown', 'verdict_reason': 'tailoring-memory'}
+
+    def test_backend_memout_stays_distinct_from_tailoring_memory(self, tmp_path):
+        """The two memory reasons name different processes' heaps."""
+        info = self._write_info(
+            tmp_path,
+            "SolverTotalTime:88.1\nSolverMemOut:1\nSolverTimeOut:0\n")
+        assert SolverStatsExtractor.savilerow_verdict(info) == {
+            'verdict': 'unknown', 'verdict_reason': 'memory'}
+
     def test_proven_optimum_marked_on_sat(self, tmp_path):
         info = self._write_info(
             tmp_path,

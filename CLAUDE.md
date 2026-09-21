@@ -174,8 +174,12 @@ whether the solver refuted the instance or stopped at its own limit, and
 `solution_found` is False for both. `savilerow_verdict` separates them off the
 `.info` file (`sat`/`unsat`/`unknown`+reason/`error`), keyed on `SolverSatisfiable`
 being *present* — not on the solver having run, since Savile Row can decide during
-tailoring and never invoke one. A horizon's `unsat` is about the bound, never the
-problem.
+tailoring and never invoke one. The `_SAVILEROW_ABORT_FLAGS` rows are tested ahead
+of that key (a run that died wrote no sound verdict) and are ordered cause before
+symptom: one heap exhaustion sets `SavileRowOutOfMemory` *and*
+`SavileRowUncaughtException`, and reports as `unknown` + `tailoring-memory` — a
+resource cap, the front-end twin of `SolverMemOut`, not a Savile Row bug. A
+horizon's `unsat` is about the bound, never the problem.
 
 **Savile Row's two in-band limits are consecutive, so they add.** `-timelimit`
 bounds tailoring and the backend's own limit bounds search, one after the other,
