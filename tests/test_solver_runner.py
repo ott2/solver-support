@@ -869,3 +869,56 @@ class TestSolverRunnerWorkingDirectory:
 
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])
+
+
+class TestOkReturncodes:
+    """A solver that answers through its exit code is not a failure (issue #5).
+
+    Run for real through ``sh -c 'exit N'`` rather than mocked, since what is
+    under test is the runner's own reading of a real process's exit status.
+    """
+
+    @staticmethod
+    def _exit(code):
+        return ['sh', '-c', f'exit {code}']
+
+    def test_default_reads_only_zero_as_success(self):
+        result = SolverRunner().run(self._exit(20), stream_output=False)
+        assert result.failed
+
+    @pytest.mark.parametrize('code', [0, 10, 20])
+    def test_dimacs_answers_succeed(self, code):
+        from solver_support.solver_runner import DIMACS_SAT_RETURNCODES
+        runner = SolverRunner()
+        with patch.object(runner.logger, 'error') as error:
+            result = runner.run(self._exit(code), stream_output=False,
+                                ok_returncodes=DIMACS_SAT_RETURNCODES)
+        assert result.success and result.returncode == code
+        error.assert_not_called()
+
+    def test_code_outside_the_set_still_fails_at_error(self):
+        from solver_support.solver_runner import DIMACS_SAT_RETURNCODES
+        runner = SolverRunner()
+        with patch.object(runner.logger, 'error') as error:
+            result = runner.run(self._exit(1), stream_output=False,
+                                ok_returncodes=DIMACS_SAT_RETURNCODES)
+        assert result.failed
+        assert any('Command failed' in str(c) for c in error.call_args_list)
+
+    def test_ok_code_does_not_rescue_a_timeout_or_launch_failure(self):
+        ok = {0, 10, 20}
+        assert not SolverResult(['x'], 20, '', '', 0.1, timed_out=True,
+                                ok_returncodes=ok).success
+        assert not SolverResult(['x'], 20, '', '', 0.1, interrupted=True,
+                                ok_returncodes=ok).success
+        assert not SolverResult(['x'], -1, '', '', 0.1, launch_failed=True,
+                                ok_returncodes={-1}).success
+
+    def test_run_phase_records_the_answer_as_success(self):
+        runner = SolverRunner()
+        runner.run_phase('solving', self._exit(20), stream_output=False,
+                         ok_returncodes={0, 10, 20})
+        phase = runner.summary.phases[0]
+        assert phase.success is True
+        assert phase.returncode == 20
+        assert phase.error_message == ''

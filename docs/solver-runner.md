@@ -21,13 +21,15 @@ the pipeline branches on.
 
 ```python
 SolverResult(command, returncode, stdout, stderr, duration,
-             timed_out=False, interrupted=False)
+             timed_out=False, interrupted=False, launch_failed=False,
+             ok_returncodes=None)
 ```
 
 | field | meaning |
 |-------|---------|
 | `command: List[str]` | the command and arguments that ran |
-| `returncode: int` | process return code (0 for success) |
+| `returncode: int` | process return code |
+| `ok_returncodes` | the codes that count as success; `{0}` unless the caller says otherwise |
 | `stdout: str` / `stderr: str` | captured output, kept separate |
 | `duration: float` | **actual** seconds the command ran |
 | `timed_out: bool` | it was killed for exceeding the timeout |
@@ -54,8 +56,29 @@ a component of it — see the invariants in [`timing-model.md`](timing-model.md)
 
 ### properties
 
-- `success: bool` — completed with return code 0, no timeout, no interruption.
+- `success: bool` — exited with one of its `ok_returncodes`, no timeout, no
+  interruption, no launch failure.
 - `failed: bool` — the inverse; useful as a direct `if` on a run.
+
+### solvers that answer through the exit code
+
+Some solvers put the *answer* in the exit code, so for them a non-zero exit is
+the solver doing its job. Every DIMACS SAT solver exits 10 for SATISFIABLE and
+20 for UNSATISFIABLE; read against `{0}`, a refutation would be logged as
+`Command failed` and recorded as `success=False`. Pass the solver's set to `run`
+or `run_phase`:
+
+```python
+from solver_support.solver_runner import DIMACS_SAT_RETURNCODES
+
+result = runner.run(['kissat', 'model.cnf'], ok_returncodes=DIMACS_SAT_RETURNCODES)
+result.success      # True for 0 (unknown), 10 (sat) and 20 (unsat)
+result.returncode   # which of them
+```
+
+`success` then means "the process ran and answered", not what the answer was:
+read `returncode` (or the parsed stats) for that. The runner never picks the set
+by detecting the solver from the command, so detection cannot decide success.
 
 Note that `failed` covers three *different* outcomes, and the pipeline usually
 cares which: check `timed_out` and `interrupted` before treating a run as a

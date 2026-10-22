@@ -9,7 +9,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Optional, List, Dict
+from typing import Optional, List, Dict, AbstractSet, Iterable
 import psutil
 import os
 import re
@@ -27,9 +27,24 @@ class SolverExecutableError(RuntimeError):
     on a later horizon, so retrying every horizon to the cap is pointless."""
 
 
+# --- exit codes that carry an answer ---
+#
+# Not every solver says "I finished" with 0. Some put the ANSWER in the exit
+# code, so a non-zero exit is the solver doing its job: read as a failure, a
+# refutation is logged at ERROR and recorded as `success=False`. A caller that
+# runs such a solver passes its set as ``ok_returncodes``; the runner never
+# sniffs the command to pick one, so detection cannot decide success.
+
+#: Every DIMACS SAT solver since the competitions: 10 = SATISFIABLE,
+#: 20 = UNSATISFIABLE, and 0 = UNKNOWN (stopped at a limit it was given).
+DIMACS_SAT_RETURNCODES = frozenset({0, 10, 20})
+
+DEFAULT_OK_RETURNCODES = frozenset({0})
+
+
 class SolverResult:
     """Encapsulates the result of a solver execution."""
-    
+
     def __init__(self,
                  command: List[str],
                  returncode: int,
@@ -40,7 +55,8 @@ class SolverResult:
                  interrupted: bool = False,
                  best_plan_number: int = 0,
                  saved_solutions: dict = None,
-                 launch_failed: bool = False):
+                 launch_failed: bool = False,
+                 ok_returncodes: Optional[Iterable[int]] = None):
         self.command = command
         self.returncode = returncode
         self.stdout = stdout
@@ -55,11 +71,18 @@ class SolverResult:
         self.launch_failed = launch_failed
         self.best_plan_number = best_plan_number  # For anytime portfolio interrupt handling
         self.saved_solutions = saved_solutions or {}  # Map plan_num -> saved_file_path
-    
+        # The exit codes that mean "the command did its job" (see
+        # DIMACS_SAT_RETURNCODES). Success means the process ran and answered,
+        # not what the answer was.
+        self.ok_returncodes: AbstractSet[int] = (
+            DEFAULT_OK_RETURNCODES if ok_returncodes is None
+            else frozenset(ok_returncodes))
+
     @property
     def success(self) -> bool:
-        """True if the command completed successfully."""
-        return self.returncode == 0 and not self.timed_out and not self.interrupted
+        """True if the command completed with one of its ``ok_returncodes``."""
+        return (self.returncode in self.ok_returncodes and not self.timed_out
+                and not self.interrupted and not self.launch_failed)
     
     @property
     def failed(self) -> bool:
@@ -182,7 +205,8 @@ class SolverRunner:
             env: Optional[Dict[str, str]] = None,
             phase_name: Optional[str] = None,
             stream_output: bool = True,
-            cwd: Optional[Path] = None) -> SolverResult:
+            cwd: Optional[Path] = None,
+            ok_returncodes: Optional[Iterable[int]] = None) -> SolverResult:
         """
         Run a command with robust error handling and logging.
 
@@ -196,6 +220,9 @@ class SolverRunner:
                 classes rely on - they are documented to run after a chdir and
                 to use paths relative to it. A consumer that would rather not
                 chdir a whole process can instead point each subprocess here.
+            ok_returncodes: Exit codes that count as success, for a solver that
+                reports its answer through the exit code (e.g.
+                DIMACS_SAT_RETURNCODES). None means ``{0}``.
 
         Returns:
             SolverResult containing execution details
@@ -453,9 +480,10 @@ class SolverRunner:
             timed_out=timed_out,
             interrupted=interrupted,
             best_plan_number=best_plan_number if stream_output else 0,
-            saved_solutions=saved_solutions if stream_output else {}
+            saved_solutions=saved_solutions if stream_output else {},
+            ok_returncodes=ok_returncodes
         )
-        
+
         # Log the result
         self.logger.info(f"Command completed in {duration:.2f}s with return code {returncode}")
         
@@ -516,7 +544,7 @@ class SolverRunner:
             expected_outputs: List of files expected to be created by this phase
             horizon_number: The horizon number being attempted (for horizon phases)
             **kwargs: Additional arguments passed to SolverRunner.run()
-                (timeout, env, stream_output, cwd)
+                (timeout, env, stream_output, cwd, ok_returncodes)
 
         Returns:
             SolverResult containing execution details
