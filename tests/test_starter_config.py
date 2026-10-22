@@ -72,10 +72,33 @@ def test_enhsp_tunes_build(starter):
 
 
 def test_savilerow_builds(starter):
-    cmd = starter.build_savilerow_command('m.eprime', 'p.param', solver_name='savilerow',
+    cmd = starter.build_savilerow_command('m.eprime', 'p.param', solver_name='kissat',
                                           use_srjava=True)
     assert cmd[0] == 'savilerow'
     assert '-timelimit' in cmd
+
+
+def test_conjure_builds_every_action(starter):
+    """The argv shapes were checked against a real Conjure 2.6 run end to end;
+    pinned here so an edit to the starter cannot silently break them."""
+    assert starter.build_conjure_command('modelling', model_path='m.essence') == [
+        'conjure', 'modelling', '-ac', 'm.essence']
+    assert starter.build_conjure_command(
+        'translate-parameter', essence_param='p-02.param', eprime='m.eprime') == [
+        'conjure', 'translate-parameter', '--essence-param=p-02.param',
+        '--eprime=m.eprime']
+    cmd = starter.build_conjure_command(
+        'translate-solution', essence_param='p-02.param', eprime='m.eprime',
+        eprime_solution='s.solution', essence_solution='e.solution')
+    assert cmd[:2] == ['conjure', 'translate-solution']
+
+
+def test_essence_runs_under_the_kissat_entry(starter):
+    """The Conjure route solves each horizon under the entry named `kissat`
+    (ConjureSolver's default, and get_tune_backend's), so the starter must
+    define one."""
+    assert starter.get_tune_backend('conjure') == 'kissat'
+    assert starter.get_solver_type('kissat') == 'savilerow'
 
 
 def test_incomplete_tunes_do_not_claim_proofs(starter):
@@ -83,3 +106,31 @@ def test_incomplete_tunes_do_not_claim_proofs(starter):
     assert starter.get_proves_unsat('pddl', tune='ff') is False
     assert starter.get_proves_unsat('pddl', tune='soup') is False
     assert starter.get_proves_unsat('eprime') is False
+    assert starter.get_proves_unsat('essence') is False
+
+
+def test_config_path_may_be_a_str(tmp_path):
+    """The starter's own header wires it with a str. A str has no is_file(), and
+    used to be silently skipped, so the registry raised as if nothing at all
+    had been registered."""
+    path = write_starter_config(tmp_path / 'models.yaml')
+    saved = mr._default_config_path
+    mr.set_default_config_path(str(path))
+    try:
+        assert 'essence' in ModelRegistry().config['models']
+    finally:
+        mr.set_default_config_path(saved)
+
+
+def test_errors_say_what_to_do(tmp_path):
+    saved = mr._default_config_path
+    try:
+        mr.set_default_config_path(None)
+        with pytest.raises(ModelRegistryError, match='set_default_config_path'):
+            ModelRegistry()
+        missing = tmp_path / 'nope.yaml'
+        mr.set_default_config_path(str(missing))
+        with pytest.raises(ModelRegistryError, match='nope.yaml'):
+            ModelRegistry()
+    finally:
+        mr.set_default_config_path(saved)

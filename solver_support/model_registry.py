@@ -10,6 +10,7 @@ from the original bash run script.
 from pathlib import Path
 from typing import Dict, Any, Optional, List, Tuple, Callable
 import copy
+import os
 import shutil
 import yaml
 
@@ -43,10 +44,13 @@ _user_config_finder: Optional[Callable[[], Optional[Path]]] = None
 def set_default_config_path(path) -> None:
     """Register the default ``models.yaml`` the registry loads at startup.
 
-    Stored as-is (a path or an ``importlib.resources`` traversable), so the
-    loader can ``open`` it directly regardless of how the consumer resolved it.
+    A ``str`` or other path-like becomes a :class:`~pathlib.Path`; anything
+    else (an ``importlib.resources`` traversable) is stored as-is, so the loader
+    can ``open`` it directly regardless of how the consumer resolved it.
     """
     global _default_config_path
+    if isinstance(path, (str, os.PathLike)):
+        path = Path(path)
     _default_config_path = path
 
 
@@ -89,9 +93,15 @@ class ModelRegistry(CommandBuilderMixin):
         # First, load the default YAML config from package
         default_yaml = self._find_default_yaml_config()
         if not default_yaml:
+            if _default_config_path is not None:
+                raise ModelRegistryError(
+                    f"The registered models.yaml ({_default_config_path}) is not "
+                    "a file."
+                )
             raise ModelRegistryError(
-                "Default models.yaml configuration file not found. "
-                "Please ensure the package is properly installed."
+                "No models.yaml is registered: solver-support ships without one. "
+                "Call set_default_config_path() before first use; "
+                "write_starter_config() writes a starter to begin from."
             )
         
         self.config = {'models': {}, 'solvers': {}}
@@ -828,8 +838,8 @@ class ModelRegistry(CommandBuilderMixin):
 def starter_config_text() -> str:
     """The starter ``models.yaml`` shipped with the package, as text.
 
-    A commented example registry - Fast Downward, SymK, ENHSP and Savile Row -
-    for a new user to copy and edit. It is never loaded implicitly: the core
+    A commented example registry - Conjure, Savile Row, Fast Downward, SymK
+    and ENHSP - for a new user to copy and edit. It is never loaded implicitly: the core
     still ships unwired, and :class:`ModelRegistry` still raises until a config
     path is set. Unlike :meth:`ModelRegistry.dump_config` it keeps its comments,
     which is what makes it fit to start from.

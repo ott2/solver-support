@@ -47,7 +47,7 @@ runtime dependencies are `psutil` and `PyYAML`.
 ## Quick start
 
 The package ships no model registry, but it carries a commented starter one
-(Fast Downward, SymK, ENHSP and Savile Row) to copy and edit. Writing it out
+(Conjure, Savile Row, Fast Downward, SymK and ENHSP) to copy and edit. Writing it out
 does not wire it; you point the registry at it:
 
 ```python

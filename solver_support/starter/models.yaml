@@ -1,5 +1,8 @@
 # A starter model registry for solver-support.
 #
+# Covers Conjure (Essence) and Savile Row (Essence Prime) constraint models and
+# Fast Downward, SymK and ENHSP planning models.
+#
 # solver-support ships unwired: it has no models.yaml of its own and will not
 # guess one. This file is a starting point to copy and edit, not a default.
 # Write it out with
@@ -23,12 +26,23 @@
 # Not covered here, because each needs more from you than a config entry:
 #   - UPF-constructed models: the core shells out to a UPF planner CLI you
 #     provide (see docs/injection-api.md, seam 4).
-#   - Conjure / Essence models: a `conjure` solver needs `modelling_args`,
-#     `translate_parameter_args` and `translate_solution_args`.
 #   - Scoring: what an objective means is injected, not configured
 #     (docs/injection-api.md, seam 2).
 
 models:
+  # An Essence model. Conjure refines it to Essence Prime once (`modelling`),
+  # then for each horizon N = 2, 3, ... translates the instance, solves it with
+  # Savile Row under the `kissat` entry below, and translates the solution
+  # back. The horizon reaches the model as two parameters appended to the
+  # instance, `letting maxMoves be N` and `letting horizon be N`. Conjure
+  # rejects a parameter the model does not declare, so the model must declare
+  # both (`given maxMoves : int(1..100)` and `given horizon : int(1..100)`),
+  # even if it only uses one.
+  essence:
+    path: models/model.essence
+    solver: conjure
+    description: Essence model, refined by Conjure and solved via Savile Row
+
   # A PDDL planning model: `path` is the domain file, and the instance (problem)
   # file is given per run. `proves-unsat: true` says a run that finds no plan
   # has *proved* there is none, which holds for a complete search. The tunes
@@ -52,13 +66,16 @@ models:
     solver: enhsp
     description: PDDL model, solved by ENHSP
 
-  # An Essence Prime constraint model, solved through Savile Row and a SAT
-  # solver. A bounded model like this cannot prove unsatisfiability, so it does
-  # not claim `proves-unsat`. Set `opt: true` if the model minimises or
-  # maximises something.
+  # An Essence Prime model, solved directly by Savile Row and a SAT solver
+  # over horizons N = 1, 2, ..., each appended to the instance as
+  # `letting noSteps be N`, so the model must declare `given noSteps : int`.
+  # A bounded model like this (and the Essence one above) cannot prove
+  # unsatisfiability: refuting horizons 1..N says nothing about N+1. So neither
+  # claims `proves-unsat`. Set `opt: true` if the model minimises or maximises
+  # something.
   eprime:
     path: models/model.eprime
-    solver: savilerow
+    solver: kissat
     description: Essence Prime model, solved via Savile Row + SAT
 
 solvers:
@@ -124,7 +141,28 @@ solvers:
         planner: sat-hmrp
         description: satisficing search, MRP heuristic
 
-  savilerow:
+  conjure:
+    solver_type: conjure
+    command: conjure
+    extensions:
+      - .essence
+    default_timeout: 600
+    # Each list starts with the Conjure subcommand; the core appends the files.
+    # `-ac` picks the first refinement Conjure offers at every choice point,
+    # which gives the single model the pipeline expects.
+    modelling_args:
+      - "modelling"
+      - "-ac"
+    translate_parameter_args:
+      - "translate-parameter"
+    translate_solution_args:
+      - "translate-solution"
+    description: refines Essence to Essence Prime and translates instances and solutions
+
+  # Savile Row with a SAT backend. The name matters: the Conjure route solves
+  # each horizon under the entry called `kissat`, and an Essence run's `--tune`
+  # picks among these presets.
+  kissat:
     solver_type: savilerow
     command: savilerow
     extensions:
@@ -141,4 +179,6 @@ solvers:
         sat_args:
           - "-run-solver"
           - "-sat"
-        description: Savile Row's default SAT solver
+          - "-sat-family"
+          - "kissat"
+        description: Savile Row driving kissat
