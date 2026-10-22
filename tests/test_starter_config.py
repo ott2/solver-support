@@ -120,10 +120,30 @@ def test_every_solver_has_a_default_model_that_exists(starter):
 
 def test_incomplete_tunes_do_not_claim_proofs(starter):
     assert starter.get_proves_unsat('pddl') is True
-    assert starter.get_proves_unsat('pddl', tune='ff') is False
-    assert starter.get_proves_unsat('pddl', tune='soup') is False
+    # complete; where it prunes unsafely (axioms), the verdict says so
+    assert starter.get_proves_unsat('pddl', tune='ff', solver_name='fd') is True
+    assert starter.get_proves_unsat('pddl', tune='soup', solver_name='fd') is False
     assert starter.get_proves_unsat('eprime') is False
     assert starter.get_proves_unsat('essence') is False
+
+
+# The solver types whose backend records a solving-phase verdict, the only
+# thing a run's outcome can conclude `unsat` from (issue #6).
+_VERDICT_SOLVER_TYPES = {'fd', 'enhsp'}
+
+
+def test_proofs_are_claimed_only_where_a_verdict_is_recorded(starter):
+    """For every solver that can run a model claiming proves-unsat, the backend
+    records a verdict, so the claim is never made off a bare `failed`."""
+    for model in starter.config['models']:
+        for solver in starter.list_solvers():
+            if not starter.is_solver_compatible_with_model(solver, model):
+                continue
+            tunes = [None, *starter.get_solver_config(solver).get('tune', {})]
+            if any(starter.get_proves_unsat(model, tune=t, solver_name=solver)
+                   for t in tunes):
+                assert starter.get_solver_type(solver) in _VERDICT_SOLVER_TYPES, (
+                    model, solver)
 
 
 def test_config_path_may_be_a_str(tmp_path):

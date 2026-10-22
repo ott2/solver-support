@@ -1,0 +1,29 @@
+Domain parsed
+Problem parsed
+Grounding..
+Grounding Time: 6
+UFX:false
+|F|:3
+|X|:0
+|A|:3
+|P|:0
+|E|:0
+h(I):0.0
+f(n) = 1.0 (Expanded Nodes: 2, Evaluated States: 3, Time: 0.003) Frontier Size: 1
+f(n) = 2.0 (Expanded Nodes: 4, Evaluated States: 4, Time: 0.006) Frontier Size: 0
+Problem Solved
+
+Found Plan:
+0.0: (make-p)
+1.0: (make-r)
+2.0: (make-q)
+
+Plan-Length:3
+Metric (Search):3.0
+Planning Time (msec): 7
+Heuristic Time (msec): 1
+Search Time (msec): 6
+Expanded Nodes:5
+States Evaluated:5
+Number of Dead-Ends detected:0
+Number of Duplicates detected:6

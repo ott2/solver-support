@@ -296,9 +296,13 @@ where the code is ambiguous, into the same vocabulary as the Savile Row verdict.
 
 - `Time limit reached. Abort search.` (the search's `max_time=`) gives
   `search-limit`.
-- `Completely explored state space -- no solution!` gives `unsat`/`exhausted`,
-  or `bounded` if the `--search` string has a `bound=`. The log looks the same
-  either way, so the argv is read for it. The translator's
+- `Completely explored state space -- no solution!` gives `unsat`/`exhausted`.
+  It gives `bounded` instead if the search has a `bound=`, and
+  `unsafe-pruning` if an evaluator's dead ends are unreliable on this task
+  (below). The exhaustion line looks the same either way, so the search is read
+  from the driver's `search command line string`. That line has aliases
+  expanded and `--evaluator` predefinitions included. If the line is missing,
+  the search is read from the argv's `--search`. The translator's
   `Generating unsolvable task` lands here too, since the search then exhausts a
   trivially false goal.
 - SymK prints no exhaustion line. Its last `BOUND: L < U` line, with `L ≥ U`, is
@@ -311,14 +315,24 @@ where the code is ambiguous, into the same vocabulary as the Savile Row verdict.
   plan!`).
 
 **`exhausted` is this library's reading, not the planner's.** It is sound only
-if the search is complete and prunes safely. A relaxation heuristic prunes
-infinite-valued states even on a task with axioms, where infinity is not a
-dead end, so `astar(ff())` there "exhausts" without proving anything. The log
-cannot reveal this. From 26.6 the planner checks it (upstream issue1201): a
-safe exhaustion exits 11 and an unsafe one exits 12 with no exhaustion line, so
-`exhausted` only ever comes from older planners and SymK. Whether it becomes a
-run-level `unsat` is decided by the registry's `proves-unsat`, which a tune
-preset can switch off.
+if the search is complete and prunes safely. Before 26.6, a search prunes
+every state an evaluator calls a dead end, whether or not
+`dead_ends_are_reliable()`. So a relaxation heuristic on a task with axioms,
+where infinity is not a dead end, "exhausts" without proving anything. The log
+does show the pruning half, and `fd_verdict` checks it as 26.6 does:
+
+| evaluator in the logged search | dead ends unreliable when |
+|---|---|
+| `ff`, `add`, `hmax` | `Translator axioms:` is non-zero, or absent |
+| `cg`, `cea` | always |
+| `hm`, `lmcount` / `landmark_sum` | always: they are unreliable on tasks with conditional effects, which the log does not show |
+
+Any such evaluator gives `unknown`/`unsafe-pruning`. From 26.6 the planner
+checks it itself (upstream issue1201): a safe exhaustion exits 11 and an unsafe
+one exits 12 with no exhaustion line. So `exhausted` only ever comes from older
+planners and SymK. Completeness of the search algorithm itself (EHC, say) is
+left to the registry's `proves-unsat`, which a tune preset can switch off, and
+which decides whether `exhausted` becomes a run-level `unsat`.
 
 **The planner's own time limit is a timeout.** `search-limit` and
 `translate-limit` make `solve()` raise `TimeoutError`, exactly as a watchdog
@@ -354,6 +368,38 @@ verdict.
     `cost_layers` — correctly, since there is nothing honest to time them by.
 - **Direct vs via-UPF**: the direct route passes `end_hint = duration -
   grounding_time`; the UPF route reuses the parser but passes no end hint.
+
+#### Verdicts: ENHSP exits 0 for almost everything
+
+ENHSP 0.21.0 exits 0 after a plan, after a proof, and after a run that failed to
+load its input. A missing domain file prints `Domain parsed`, then
+`Unsolvable Problem`, and exits 0. The exception goes to **stderr**. So
+`SolverStatsExtractor.enhsp_verdict` reads stdout and stderr, and
+`EnhspSolver` records the result on the `solving` phase, first match wins:
+
+| evidence | verdict | `verdict_reason` |
+|---|---|---|
+| `Problem Solved` | `sat` | |
+| `java.lang.OutOfMemoryError` (exit 1) | `unknown` | `memory` |
+| a logged exception (`SEVERE:`, `Exception in thread`) | `error` | `crash` |
+| `Some Syntax Error` (exit 255) | `error` | `input-error` |
+| any other non-zero exit | `error` | `crash` (signal) / `unexplained` |
+| `Problem unsolvable`, with `-anytime` / `-autoanytime` | `unknown` | `anytime` |
+| `Problem unsolvable`, with `-dl` | `unknown` | `bounded` |
+| `Problem unsolvable`, helpful actions (`sat-hmrph`, `sat-hmrphj`; or `-ha true` / `-ht true` with no `-planner`) | `unknown` | `incomplete` |
+| `Problem unsolvable`, otherwise | `unsat` | `exhausted` |
+| `Unsolvable Problem` (grounding returned nothing) | `unknown` | `grounding` |
+| none of these | `error` | `unexplained` |
+
+A `-planner` preset overrides `-ha` and `-ht`, as in ENHSP's own `setPlanner`.
+As with Fast Downward, `exhausted` becomes a run-level `unsat` only through
+`proves-unsat`.
+
+**Via UPF there is no verdict.** The UPF statuses are wrong in both directions:
+`up_enhsp` reports any exit 0 without a plan as `UNSOLVABLE_PROVEN`, and
+`up_fast_downward` reports any exit 12 as `UNSOLVABLE_INCOMPLETELY`. The UPF CLI
+is the consumer's, so if a consumer wants its UPF runs to conclude `unsat`, it
+must read the engine's log and record a verdict on the `solving` phase itself.
 
 ## invariants and conventions
 
@@ -409,8 +455,8 @@ proved. A status that stopped early (`timeout`, `hlim`, `stopped`) is never
 For a planner, being able to prove depends on the **search** as well as the model.
 `get_proves_unsat(model, tune=..., solver_name=...)` is the model's
 `proves-unsat` AND the effective tune's. A tune preset may carry
-`proves-unsat: false` (for example a relaxation heuristic that prunes unsafely
-on tasks with axioms), which takes the claim away. A tune can never grant it to
+`proves-unsat: false` (for example an incomplete search such as EHC, or an
+anytime portfolio), which takes the claim away. A tune can never grant it to
 a model that cannot prove. `finalize` keeps the value on the summary as
 `proves_unsat`, and a later `finalize` that passes None reuses it. So a
 re-finalize that folds in a late phase, as `horizon_utils` does, cannot drop it.
@@ -418,7 +464,7 @@ re-finalize that folds in a late phase, as `horizon_utils` does, cannot drop it.
 **A `solving` phase's verdict decides a completed run.** `failed` is the status
 of both a planner's proof and its crash, so `proves_unsat` alone would promote
 every crash of a complete model to `unsat`. Where the `solving` phase recorded a
-`verdict` (Fast Downward and SymK do, see above), it decides instead:
+`verdict` (Fast Downward, SymK and ENHSP do, see above), it decides:
 
 | verdict | `proves_unsat` | outcome |
 |---|---|---|
@@ -427,7 +473,15 @@ every crash of a complete model to `unsat`. Where the `solving` phase recorded a
 | `unknown` / `killed` | either | `unknown` |
 | `error` | either | `error` |
 
-A run with no verdict is read as before. Per-horizon verdicts
+| none | True | `unknown`: it may have been a proof, or a crash |
+| none | False | `error` |
+
+**No verdict, no `unsat`.** Without a verdict, a completed run's status is all
+there is to go on, and `failed` cannot tell a proof from a crash, so the run is
+`unknown` however complete the model. A UPF run is the usual case, and so is
+any consumer that drives a solver itself. To let such a run conclude `unsat`,
+record a verdict on its `solving` phase (`phase.solver_stats['verdict']`).
+Per-horizon verdicts
 (`solving-horizon-N`) are about one bound each and never decide the run.
 
 ## what the core owns
@@ -437,6 +491,7 @@ A run with no verdict is read as before. Per-horizon verdicts
 | per-solver stat parsers, cost-layer assembly, dispatch | `solver_stats.py` |
 | per-run Savile Row verdict (refuted vs gave up) | `solver_stats.py` (`savilerow_verdict`) |
 | per-run Fast Downward / SymK verdict (exit code + log) | `solver_stats.py` (`fd_verdict`) |
+| per-run ENHSP verdict (stdout + stderr) | `solver_stats.py` (`enhsp_verdict`) |
 | Savile Row `.info` split recording (per horizon) | `solver_horizon.py` (`_record_savilerow_times`) |
 | stats attached to a phase after each solve | `solver_runner.py`, `solver_horizon.py` |
 | the phase model (`RunSummary` / `PhaseResult`), outcome and success | `run_summary.py` |

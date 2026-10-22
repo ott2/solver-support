@@ -1,0 +1,20 @@
+Domain parsed
+Problem parsed
+Grounding..
+Grounding Time: 4
+UFX:false
+|F|:3
+|X|:0
+|A|:3
+|P|:0
+|E|:0
+h(I):0.0
+Problem unsolvable
+Metric (Search):-1.0
+Planning Time (msec): 3
+Heuristic Time (msec): 1
+Search Time (msec): 0
+Expanded Nodes:1
+States Evaluated:1
+Number of Dead-Ends detected:0
+Number of Duplicates detected:0

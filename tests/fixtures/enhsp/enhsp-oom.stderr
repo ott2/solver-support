@@ -1,0 +1,7 @@
+Exception in thread "main" java.lang.OutOfMemoryError: Java heap space
+	at java.base/java.lang.Float.valueOf(Float.java:578)
+	at com.hstairs.ppmajal.search.WAStar.search(WAStar.java:135)
+	at com.hstairs.ppmajal.PDDLProblem.PDDLPlanner.plan(PDDLPlanner.java:85)
+	at planners.ENHSP.search(ENHSP.java:559)
+	at planners.ENHSP.planning(ENHSP.java:211)
+	at main.main(main.java:31)

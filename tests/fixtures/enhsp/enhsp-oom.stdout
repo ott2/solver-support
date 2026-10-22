@@ -1,0 +1,14 @@
+Domain parsed
+Problem parsed
+Grounding..
+Grounding Time: 5
+UFX:false
+|F|:0
+|X|:20
+|A|:40
+|P|:0
+|E|:0
+h(I):0.0
+f(n) = 1.0 (Expanded Nodes: 2, Evaluated States: 41, Time: 0.004) Frontier Size: 39
+f(n) = 2.0 (Expanded Nodes: 42, Evaluated States: 840, Time: 0.015) Frontier Size: 798
+f(n) = 3.0 (Expanded Nodes: 841, Evaluated States: 11481, Time: 0.047) Frontier Size: 10640

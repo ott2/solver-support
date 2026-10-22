@@ -245,13 +245,14 @@ class RunSummary:
         if final_status in _COMPLETED_STATUSES:
             verdict = self._solving_verdict()
             if verdict is None:
-                # No account of how the search ended, so read the status alone.
-                # The search finished and produced nothing. From a model that
-                # decides the problem that IS the answer; from any other model
-                # it means something went wrong, because a bounded model that
-                # finishes unsolved has not concluded anything -- it has merely
-                # stopped.
-                return 'unsat' if proves_unsat else 'error'
+                # No account of how the search ended, so the status is all
+                # there is, and it cannot prove anything: `failed` is equally
+                # what a proof, a rejected input and a crash look like. From a
+                # model that could prove, it may have been a proof, so the
+                # answer is unknown. From any other model, finishing unsolved
+                # means something went wrong. To conclude unsat, the solving
+                # phase must record a verdict.
+                return 'unknown' if proves_unsat else 'error'
             # The solver said how its search ended. Only a refutation from a
             # search that can prove one is a proof; an exhausted search that
             # cannot (an unsafe heuristic, a tune switched off) concluded

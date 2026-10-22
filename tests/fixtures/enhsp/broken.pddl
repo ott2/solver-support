@@ -1,0 +1,1 @@
+(define (domain broken) (:predicates (p)) (:action a :parameters () :precondition (p) :effect (and (not (p)))

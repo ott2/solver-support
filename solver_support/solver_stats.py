@@ -85,6 +85,20 @@ _ENHSP_LAYER_RE = re.compile(r'f\(n\)\s*=\s*([\d.]+)\s*\([^)]*Time:\s*([\d.]+)\)
 # success, neither on a timeout / unsolvable.
 _ENHSP_SOLVED_RE = re.compile(r'Problem Solved|Found Plan:')
 
+# ENHSP 0.21.0's verdict lines (see enhsp_verdict). It exits 0 for nearly every
+# ending, so these lines and stderr are all there is to go on.
+_ENHSP_SOLVED_LINE = 'Problem Solved'
+_ENHSP_EXHAUSTED_LINE = 'Problem unsolvable'      # the search ran out of states
+_ENHSP_REFUSED_LINE = 'Unsolvable Problem'        # parsing/grounding returned null
+_ENHSP_SYNTAX_LINE = 'Some Syntax Error'          # exits 255
+# A `catch (Exception)` logs through java.util.logging (to stderr) and carries
+# on; an uncaught one ends the JVM with exit 1.
+_ENHSP_EXCEPTION_RE = re.compile(r'^SEVERE: |^Exception in thread ', re.MULTILINE)
+_ENHSP_OOM = 'java.lang.OutOfMemoryError'
+# `-planner` presets that prune with helpful actions (ENHSP.setPlanner); with no
+# preset, `-ha true` / `-ht true` do the same. A preset overrides those flags.
+_ENHSP_HELPFUL_PLANNERS = frozenset({'sat-hmrph', 'sat-hmrphj'})
+
 
 # What a single Savile Row run concluded, derived from its ``.info`` file. The
 # two *decided* verdicts come first: they are the only ones that answer the
@@ -181,6 +195,18 @@ _FD_EXHAUSTED_LINE = 'Completely explored state space -- no solution!'   # befor
 _SYMK_BOUND_RE = re.compile(r'BOUND: (\d+) < (\d+)')
 _SYMK_INFINITY = 2147483647
 _FD_BOUND_ARG_RE = re.compile(r'\bbound\s*=')
+# The search the driver actually ran, aliases expanded and evaluators predefined
+# with --evaluator included. Read in preference to the argv the caller passes.
+_FD_SEARCH_LINE_RE = re.compile(r'search command line string: (.*)')
+_FD_AXIOMS_RE = re.compile(r'^Translator axioms: (\d+)', re.MULTILINE)
+# A pre-26.6 search prunes every state an evaluator calls a dead end, reliable or
+# not, so its exhaustion is a proof only if every evaluator's dead ends are. From
+# `dead_ends_are_reliable()` in the 26.6 sources: `cg` and `cea` never are; `hm`
+# is not on tasks with conditional effects, nor the landmark sum on most of them,
+# which the log does not show, so both are treated as never. The relaxation
+# heuristics are unreliable exactly when the task has axioms.
+_FD_UNRELIABLE_RE = re.compile(r'\b(?:cg|cea|hm|lmcount|landmark_sum)\(')
+_FD_UNRELIABLE_WITH_AXIOMS_RE = re.compile(r'\b(?:ff|add|hmax)\(')
 
 
 class SolverStatsExtractor:
@@ -621,17 +647,21 @@ class SolverStatsExtractor:
 
         ``unsat`` is about *the configured search*, not the task. With reason
         ``exhausted`` it is this function's own reading of a pre-26.6 planner
-        whose search ran out of states - sound only if that search is complete
-        and prunes safely, which the log cannot reveal (``astar(ff())`` on a
-        task with axioms prunes states it should not). Without a reason it is
-        the planner's own claim. Either way, turning it into a run-level outcome
-        is the caller's job, through the registry's ``get_proves_unsat``.
+        whose search ran out of states. That is sound only if the search is
+        complete and prunes safely. The pruning half is checked here, as 26.6
+        checks it itself: an evaluator whose dead ends are unreliable on this
+        task (``ff`` on a task with axioms, ``cg`` on any) gives ``unknown`` /
+        ``unsafe-pruning``. Completeness of the search algorithm is not
+        checked here. Without a reason, ``unsat`` is the planner's own claim.
+        Either way, turning it into a run-level outcome is the caller's job,
+        through the registry's ``get_proves_unsat``.
 
         Args:
             returncode: The planner driver's exit code.
             stdout: Its stdout, where the search logs.
             command: The argv that ran, read for a ``bound=`` in ``--search``
-                (a pre-26.6 bounded search logs exactly as an unbounded one).
+                (a pre-26.6 bounded search logs exactly as an unbounded one)
+                when the log lacks the driver's ``search command line string``.
             timed_out / interrupted: the runner killed it, so the planner's own
                 account of how the search ended was never written.
             anytime: it was a portfolio (``--alias``), whose 12 can mask its
@@ -667,13 +697,21 @@ class SolverStatsExtractor:
             return 'unknown', 'portfolio'
         if _FD_TIME_LIMIT_LINE in stdout:
             return 'unknown', 'search-limit'
-        search = ''
-        if '--search' in command:
+        logged = _FD_SEARCH_LINE_RE.findall(stdout)
+        if logged:
+            search = logged[-1]
+        elif '--search' in command:
             i = command.index('--search')
             search = command[i + 1] if i + 1 < len(command) else ''
+        else:
+            search = ''
         bounded = bool(_FD_BOUND_ARG_RE.search(search))
         if _FD_EXHAUSTED_LINE in stdout:
-            return ('unknown', 'bounded') if bounded else ('unsat', 'exhausted')
+            if bounded:
+                return 'unknown', 'bounded'
+            if SolverStatsExtractor._fd_pruned_unsafely(search, stdout):
+                return 'unknown', 'unsafe-pruning'
+            return 'unsat', 'exhausted'
         bounds = _SYMK_BOUND_RE.findall(stdout)
         if bounds:
             lower, upper = (int(b) for b in bounds[-1])
@@ -686,6 +724,88 @@ class SolverStatsExtractor:
         # search the planner itself judged incomplete or unsafely pruned
         # (`Search terminated without finding a plan!`).
         return 'unknown', 'incomplete'
+
+    @staticmethod
+    def _fd_pruned_unsafely(search: str, stdout: str) -> bool:
+        """Whether a search that ran out of states may have pruned a live one."""
+        if _FD_UNRELIABLE_RE.search(search):
+            return True
+        if _FD_UNRELIABLE_WITH_AXIOMS_RE.search(search):
+            # No axiom count in the log reads as "may have axioms".
+            axioms = _FD_AXIOMS_RE.findall(stdout)
+            return not axioms or int(axioms[-1]) > 0
+        return False
+
+    @staticmethod
+    def enhsp_verdict(returncode: int, stdout: str, stderr: str = '',
+                      command: Optional[List[str]] = None,
+                      timed_out: bool = False,
+                      interrupted: bool = False) -> Dict[str, Any]:
+        """What an ENHSP run concluded, from its output: the twin of
+        :meth:`fd_verdict`, in the same vocabulary.
+
+        ENHSP 0.21.0 exits 0 for nearly every ending: a plan, a proof, a
+        search that pruned or was bounded, and a parse or grounding failure
+        that it logged and then reported as ``Unsolvable Problem``. So the exit
+        code says almost nothing, and stderr matters: a logged exception goes
+        there while the run carries on to exit 0.
+
+        ``unsat`` (reason ``exhausted``) means the configured search ran out of
+        states. Whether that search is complete is still the registry's
+        ``get_proves_unsat`` to say. Helpful-action pruning and a ``-dl`` cost
+        bound are read off the argv and give ``unknown``.
+        """
+        if timed_out or interrupted:
+            return {'verdict': 'killed'}
+        stdout = stdout or ''
+        stderr = stderr or ''
+        argv = command or []
+        if _ENHSP_SOLVED_LINE in stdout:
+            verdict, reason = 'sat', None
+        elif _ENHSP_OOM in stderr or _ENHSP_OOM in stdout:
+            verdict, reason = 'unknown', 'memory'
+        elif _ENHSP_EXCEPTION_RE.search(stderr):
+            verdict, reason = 'error', 'crash'
+        elif _ENHSP_SYNTAX_LINE in stdout:
+            verdict, reason = 'error', 'input-error'
+        elif returncode != 0:
+            verdict, reason = 'error', 'crash' if returncode < 0 else 'unexplained'
+        elif _ENHSP_EXHAUSTED_LINE in stdout:
+            verdict, reason = SolverStatsExtractor._enhsp_exhausted_verdict(argv)
+        elif _ENHSP_REFUSED_LINE in stdout:
+            # prepareForSearch returned false. That may be a sound reachability
+            # refutation, but the log does not say which, so it proves nothing.
+            verdict, reason = 'unknown', 'grounding'
+        else:
+            verdict, reason = 'error', 'unexplained'
+        stats: Dict[str, Any] = {'verdict': verdict}
+        if reason:
+            stats['verdict_reason'] = reason
+        return stats
+
+    @staticmethod
+    def _enhsp_exhausted_verdict(argv: List[str]):
+        """Read ``Problem unsolvable`` against the configuration that ran."""
+        def value(flag):
+            if flag in argv:
+                i = argv.index(flag)
+                return argv[i + 1] if i + 1 < len(argv) else ''
+            return None
+
+        if '-anytime' in argv or '-autoanytime' in argv:
+            # Each round is bounded by the last plan's cost, and its own
+            # -timeout ends the run the same way.
+            return 'unknown', 'anytime'
+        if value('-dl') is not None:
+            return 'unknown', 'bounded'
+        planner = value('-planner')
+        if planner is not None:
+            helpful = planner in _ENHSP_HELPFUL_PLANNERS
+        else:
+            helpful = value('-ha') == 'true' or value('-ht') == 'true'
+        if helpful:
+            return 'unknown', 'incomplete'
+        return 'unsat', 'exhausted'
 
     @staticmethod
     def extract_fast_downward_stats(stdout: str, stderr: str,

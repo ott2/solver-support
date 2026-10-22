@@ -51,9 +51,14 @@ models:
 
   # A PDDL planning model: `path` is the domain file, and the instance (problem)
   # file is given per run. Fast Downward runs it by default; SymK and ENHSP
-  # can run it too. `proves-unsat: true` says a run that finds no plan has
-  # *proved* there is none, which holds for a complete search. The tunes that
-  # are not complete opt out below, so it is safe to leave on here.
+  # can run it too. `proves-unsat: true` says this model can *prove* there is
+  # no plan, given a complete search. It is safe to leave on for these three
+  # planners, because each records a verdict read off its own log: a run is
+  # concluded unsat only when its search ran out of states without being
+  # bounded or pruned unsafely, never just because it found no plan. The one
+  # tune that cannot prove (the `soup` portfolio) opts out below. A solver
+  # whose backend records no verdict, such as a UPF planner, never concludes
+  # unsat, whatever this says.
   pddl:
     path: models/domain.pddl
     solver: fd
@@ -92,8 +97,8 @@ solvers:
       ff:
         search: "lazy_greedy([ff()])"
         # FF prunes states it scores as infinite, which is unsafe on tasks with
-        # axioms, so a search under it that runs out of states proves nothing.
-        proves-unsat: false
+        # axioms. The verdict sees that in the log and claims no proof there;
+        # on a task without axioms, running out of states is a proof.
         description: satisficing greedy best-first search with FF
       soup:
         alias: seq-sat-fdss-2018

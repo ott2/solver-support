@@ -609,6 +609,34 @@ class TestEnhspSolver(TempDirTestMixin):
 
         assert result is None
 
+    @pytest.mark.parametrize("fixture, expected, logged_as", [
+        ("enhsp-exhaust", {"verdict": "unsat", "verdict_reason": "exhausted"},
+         "info"),
+        # issue #6: exit 0 and an `unsolvable` line, after the domain failed to load
+        ("enhsp-nofile", {"verdict": "error", "verdict_reason": "crash"},
+         "error"),
+    ])
+    def test_enhsp_solver_records_its_verdict(self, fixture, expected, logged_as):
+        """The verdict goes on the solving phase, where the summary's outcome
+        reads it; only an `error` verdict is logged as a failure."""
+        enhsp_dir = Path(__file__).parent / "fixtures" / "enhsp"
+        stderr = enhsp_dir / f"{fixture}.stderr"
+        self.mock_runner.run_phase.return_value = SolverResult(
+            command=["enhsp"], returncode=0,
+            stdout=(enhsp_dir / f"{fixture}.stdout").read_text(),
+            stderr=stderr.read_text() if stderr.exists() else "", duration=0.5)
+        phase = PhaseResult(name="solving")
+        self.mock_summary.get_phase.return_value = phase
+
+        result = self.solver.solve(
+            param_file=self.temp_path / "problem.pddl", model_path="domain.pddl")
+
+        assert result is None
+        assert {k: phase.solver_stats[k] for k in expected} == expected
+        assert getattr(self.solver.logger, logged_as).called
+        if logged_as == "info":
+            assert not self.solver.logger.error.called
+
     def test_enhsp_solver_timeout(self):
         """A timed-out run (no plan) raises TimeoutError."""
         self.mock_runner.run_phase.return_value = SolverResult(

@@ -1,0 +1,6 @@
+(define (domain axtoggle)
+  (:requirements :strips :derived-predicates)
+  (:predicates (p) (q) (d))
+  (:derived (d) (and (p) (q)))
+  (:action make-p :parameters () :precondition () :effect (and (p) (not (q))))
+  (:action make-q :parameters () :precondition () :effect (and (q) (not (p)))))

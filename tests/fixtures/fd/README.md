@@ -15,12 +15,17 @@ believed the planner prints. Captured 2026-10-22 from Fast Downward `76b1d36e4`
 | `fd-maxtime.stdout` | `fd dom.pddl unsat.pddl --search "astar(blind(), max_time=0)"` | 12 |
 | `fd-ehc.stdout` | `fd dom.pddl unsat.pddl --search "ehc(ff())"` | 12 |
 | `fd-lmcut-ax.stdout` | `fd axdom.pddl axprob.pddl --search "astar(lmcut())"` | 34 |
+| `fd-ff-ax.stdout` | `fd axunsat.pddl axunsat-prob.pddl --search "lazy_greedy([ff()])"` | 12 |
 | `symk-exhaust.stdout` | `symk dom.pddl unsat.pddl --search "sym_bd()"` | 12 |
 | `symk-bound.stdout` | `symk dom.pddl sat.pddl --search "sym_bd(bound=2)"` | 12 |
 
 `unsat.pddl` is relaxed-reachable but unsolvable (`p` and `q` delete each
 other), so the translator cannot see it and the search must exhaust;
 `trans.pddl` is one the translator *does* see (`Generating unsolvable task`).
+`axunsat.pddl` is the same toggle with the goal as a derived predicate, so the
+task has an axiom (`Translator axioms: 1`). That makes `ff`'s dead ends
+unreliable, so its exhaustion line is no proof. Here the task really is
+unsolvable, but the log cannot show that.
 
 Fast Downward 26.6 is not represented: it is not built here. Its log lines are
 taken verbatim from `src/search/search_algorithm.cc` (`get_finished_search_status`)

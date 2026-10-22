@@ -155,7 +155,8 @@ def test_custom_status_without_a_solution_is_not_success():
 
 def test_planner_proven_unsat_is_success():
     """Exits non-zero, finalizes 'failed', and has answered the question."""
-    s = _summary(_phase("translation", True), _phase("solving", False))
+    s = _summary(_phase("translation", True),
+                 _phase("solving", False, verdict="unsat"))
     s.finalize("failed", proves_unsat=True)
     assert s.outcome == "unsat"
     assert s.success is True
@@ -193,12 +194,23 @@ def test_failed_run_is_read_through_its_verdict(verdict, proves, outcome):
     assert s.success is (outcome == "unsat")
 
 
-def test_failed_without_a_verdict_keeps_its_old_reading():
-    """Solvers that record no verdict (and summaries written before verdicts
-    existed) mean what they always meant."""
-    s = _summary(_phase("solving", False))
+def test_failed_without_a_verdict_is_never_unsat():
+    """Issue #6: with no account of how the search ended, `failed` is what a
+    proof, a rejected input and a crash all look like. A model that could have
+    proved gets `unknown`, and only a recorded verdict can make it `unsat`."""
+    s = _summary(_phase("solving", False, returncode=1))
     s.finalize("failed", proves_unsat=True)
-    assert s.outcome == "unsat"
+    assert s.outcome == "unknown"
+    assert s.success is False
+
+
+def test_issue_6_reproduction():
+    """The issue's own reproduction: an ENHSP run that recorded no verdict."""
+    s = RunSummary(instance='i', model='pddl', solver='enhsp')
+    s.add_phase(PhaseResult(name='solving', returncode=1,
+                            command=['enhsp', '-o', 'd.pddl', '-f', 'p.pddl']))
+    s.finalize('failed', proves_unsat=True)
+    assert (s.outcome, s.success) == ('unknown', False)
 
 
 def test_horizon_verdicts_never_decide_the_run():

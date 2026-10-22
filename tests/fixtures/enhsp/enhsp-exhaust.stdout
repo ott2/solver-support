@@ -1,0 +1,23 @@
+Domain parsed
+Problem parsed
+Grounding..
+Grounding Time: 4
+UFX:false
+|F|:3
+|X|:0
+|A|:3
+|P|:0
+|E|:0
+h(I):0.0
+f(n) = 1.0 (Expanded Nodes: 2, Evaluated States: 3, Time: 0.002) Frontier Size: 1
+f(n) = 2.0 (Expanded Nodes: 4, Evaluated States: 4, Time: 0.004) Frontier Size: 0
+f(n) = 3.0 (Expanded Nodes: 5, Evaluated States: 5, Time: 0.004) Frontier Size: 0
+Problem unsolvable
+Metric (Search):-1.0
+Planning Time (msec): 6
+Heuristic Time (msec): 0
+Search Time (msec): 0
+Expanded Nodes:5
+States Evaluated:5
+Number of Dead-Ends detected:0
+Number of Duplicates detected:8

@@ -7,6 +7,7 @@ from a search that gave up. The 12 cases therefore run against REAL planner
 logs (tests/fixtures/fd, see its README), not hand-written ones.
 """
 
+import re
 from pathlib import Path
 
 import pytest
@@ -24,6 +25,14 @@ def _log(name):
 def _fd(search):
     return ['fd', '--search-time-limit', '60', 'dom.pddl', 'p.pddl',
             '--search', search]
+
+
+_EXHAUSTED = '[t=0.01s, 1 KB] Completely explored state space -- no solution!'
+
+
+def _swap_search(log, search):
+    """A real log with its logged search swapped, everything else kept."""
+    return re.sub(r"--search '[^']*'", lambda _: f"--search '{search}'", log)
 
 
 def _verdict(returncode, stdout='', command=None, **kwargs):
@@ -57,11 +66,19 @@ class TestUnsolvedExit12:
     def test_real_logs(self, fixture, search, expected):
         assert _verdict(12, _log(fixture), _fd(search)) == expected
 
-    def test_bound_is_read_from_the_search_string(self):
-        """The log alone cannot see a bound: drop it from the argv and the same
-        output reads as a proof."""
+    def test_the_logged_search_outranks_the_argv(self):
+        """The driver logs the search it actually ran, so a bound is seen even
+        when the caller's argv does not show one (an alias, say)."""
         assert _verdict(12, _log('fd-bound'), _fd('astar(blind())')) == {
+            'verdict': 'unknown', 'verdict_reason': 'bounded'}
+
+    def test_bound_is_read_from_the_argv_without_the_log_line(self):
+        """Exhaustion alone reads as a proof; the argv's bound= takes it away."""
+        log = _EXHAUSTED + '\n'
+        assert _verdict(12, log, _fd('astar(blind())')) == {
             'verdict': 'unsat', 'verdict_reason': 'exhausted'}
+        assert _verdict(12, log, _fd('astar(blind(), bound=2)')) == {
+            'verdict': 'unknown', 'verdict_reason': 'bounded'}
 
     def test_portfolio_12_is_never_unsat(self):
         """A portfolio's 12 can mask its components' time-outs, and its
@@ -83,6 +100,46 @@ class TestUnsolvedExit12:
     def test_time_limit_outranks_exhaustion(self):
         both = _log('fd-maxtime') + _log('fd-exhaust')
         assert _verdict(12, both, _fd('astar(blind())'))['verdict'] == 'unknown'
+
+
+class TestUnsafePruning:
+    """Issue #6: before 26.6, a search prunes every state an evaluator calls a
+    dead end, reliable or not, so running out of states proves nothing if one
+    of them was unreliable on this task."""
+
+    def test_real_ff_on_a_task_with_axioms(self):
+        assert _verdict(12, _log('fd-ff-ax'), None) == {
+            'verdict': 'unknown', 'verdict_reason': 'unsafe-pruning'}
+
+    @pytest.mark.parametrize('search', [
+        'lazy_greedy([ff()])', 'eager_greedy([add()])', 'astar(hmax())'])
+    def test_relaxation_heuristics_are_safe_without_axioms(self, search):
+        """`fd-exhaust` has `Translator axioms: 0`."""
+        assert _verdict(12, _swap_search(_log('fd-exhaust'), search), None) == {
+            'verdict': 'unsat', 'verdict_reason': 'exhausted'}
+
+    @pytest.mark.parametrize('search', [
+        'lazy_greedy([cg()])', 'lazy_greedy([cea()])', 'astar(hm(m=2))',
+        'lazy_greedy([lmcount(lm_rhw())])'])
+    def test_always_unreliable_evaluators(self, search):
+        assert _verdict(12, _swap_search(_log('fd-exhaust'), search), None) == {
+            'verdict': 'unknown', 'verdict_reason': 'unsafe-pruning'}
+
+    def test_a_predefined_evaluator_counts(self):
+        """`--evaluator h=cg()` is in the logged line, not in the search."""
+        log = _log('fd-exhaust').replace(
+            "--search 'astar(blind())'",
+            "--evaluator 'h=cg()' --search 'lazy_greedy([h])'")
+        assert _verdict(12, log, None)['verdict_reason'] == 'unsafe-pruning'
+
+    def test_blind_on_a_task_with_axioms_is_still_a_proof(self):
+        log = _swap_search(_log('fd-ff-ax'), 'astar(blind())')
+        assert _verdict(12, log, None) == {
+            'verdict': 'unsat', 'verdict_reason': 'exhausted'}
+
+    def test_no_axiom_count_reads_as_axioms(self):
+        assert _verdict(12, _EXHAUSTED, _fd('lazy_greedy([ff()])')) == {
+            'verdict': 'unknown', 'verdict_reason': 'unsafe-pruning'}
 
 
 class TestExitCodes:

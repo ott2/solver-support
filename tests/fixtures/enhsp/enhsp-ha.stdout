@@ -1,0 +1,24 @@
+Domain parsed
+Problem parsed
+Grounding..
+Grounding Time: 4
+Aibr Preprocessing
+UFX:false
+|F|:3
+|X|:0
+|A|:3
+|P|:0
+|E|:0
+Numeric Error for Complex Condition Activated
+H1 Setup Time (msec): 9
+h(I):2.0
+ g(n)= 1.0 h(n)=1.0
+Problem unsolvable
+Metric (Search):-1.0
+Planning Time (msec): 5
+Heuristic Time (msec): 2
+Search Time (msec): 0
+Expanded Nodes:3
+States Evaluated:3
+Number of Dead-Ends detected:0
+Number of Duplicates detected:2

@@ -9,9 +9,10 @@ sas_plan, so the PDDLSolutionParser consumes the result unchanged.
 """
 
 from pathlib import Path
-from typing import Optional
+from typing import Any, Dict, Optional
 
 from .solver_base import Solver
+from .solver_stats import SolverStatsExtractor
 from .global_state import global_state
 
 
@@ -71,6 +72,17 @@ class EnhspSolver(Solver):
         # run_phase's expected_outputs, which would list it even on a failed parse.
         result = self.runner.run_phase("solving", cmd)
 
+        # ENHSP exits 0 for a proof and for a run that failed to load its input
+        # alike, so the summary's outcome is decided by this, not by `failed`.
+        verdict: Dict[str, Any] = {}
+        if not result.launch_failed:
+            verdict = SolverStatsExtractor.enhsp_verdict(
+                result.returncode, result.stdout, result.stderr, cmd,
+                timed_out=result.timed_out, interrupted=result.interrupted)
+            solving_phase = self.runner.summary.get_phase("solving")
+            if solving_phase is not None:
+                solving_phase.solver_stats.update(verdict)
+
         if result.timed_out:
             # No internal time limit outside anytime mode: the runner terminated
             # ENHSP mid-search, so no plan was written - a genuine timeout.
@@ -80,16 +92,19 @@ class EnhspSolver(Solver):
             self.logger.warning("ENHSP solving was interrupted")
             return self._finalise(solution_file)
 
-        if result.success:
-            return self._finalise(solution_file)
-
-        # ENHSP exits non-zero when it cannot parse the model (e.g. the axiom
-        # `pddl` domain, which it does not support) or fails to plan. A plan may
-        # still have been written on some paths, so salvage it if present.
-        salvaged = self._finalise(solution_file)
-        if salvaged is None:
-            self.logger.error(f"ENHSP solver failed: {result.stderr}")
-        return salvaged
+        # A plan may have been written even on a failing path, so take it if
+        # present. Without one, the verdict says whether anything went wrong:
+        # ENHSP exits 0 after a missing input file, and non-zero on a syntax
+        # error (e.g. the axioms it does not support) or out of memory.
+        plan = self._finalise(solution_file)
+        if plan is None:
+            failed = (verdict.get('verdict') == 'error' if verdict
+                      else not result.success)
+            if failed:
+                self.logger.error(f"ENHSP solver failed: {verdict} {result.stderr}")
+            else:
+                self.logger.info(f"ENHSP found no plan: {verdict}")
+        return plan
 
     def _finalise(self, solution_file: Path) -> Optional[Path]:
         """Register and return the plan file if ENHSP wrote one, else None."""
