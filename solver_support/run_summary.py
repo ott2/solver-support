@@ -133,8 +133,19 @@ _SUCCESS_OUTCOMES = frozenset({'solved', 'unsat'})
 # stopped early and the outcome can only be 'unknown', however complete the
 # model - which is what stops 'hlim' being read as a proof. ('failed' is here
 # because that is the status a planner's proven-unsat arrives under: it exits
-# non-zero, having answered the question.)
+# non-zero, having answered the question. It is also the status of a crash, which
+# is why a solving phase's `verdict`, where there is one, decides between them.)
 _COMPLETED_STATUSES = frozenset({"done", "success", "failed"})
+
+# A completed run with no solution, read through its solving phase's verdict
+# (see SolverStatsExtractor.fd_verdict). `unsat` is handled separately: it needs
+# the model's proves_unsat as well.
+_OUTCOME_BY_VERDICT = {
+    'unknown': 'unknown',   # stopped at a limit, or a search that cannot refute
+    'killed': 'unknown',
+    'error': 'error',
+    'sat': 'error',         # claimed a plan, yet none reached the summary
+}
 
 # final_status -> why the run stopped. Statuses absent here leave stop_reason
 # empty rather than guessing: an unrecognised label is a consumer's own, and
@@ -174,6 +185,10 @@ class RunSummary:
     # written before these existed.
     outcome: str = ""                       # solved / unsat / unknown / error
     stop_reason: str = ""                   # complete / time / horizons / interrupt / error
+    # Whether this run's model AND search can prove unsatisfiability (the
+    # registry's get_proves_unsat), as last given to finalize(). Kept so that a
+    # later re-finalize - after appending a phase, say - cannot drop it.
+    proves_unsat: bool = False
     score: Optional[int] = None             # Total score the model reported (scored/upf models only)
     startat: Optional[int] = None           # Starting horizon for Savile Row models (if specified)
     stopat: Optional[int] = None            # Highest horizon tried, if the default cap (100) was overridden
@@ -228,11 +243,22 @@ class RunSummary:
             return 'error'
 
         if final_status in _COMPLETED_STATUSES:
-            # The search finished and produced nothing. From a model that
-            # decides the problem that IS the answer; from any other model it
-            # means something went wrong, because a bounded model that finishes
-            # unsolved has not concluded anything -- it has merely stopped.
-            return 'unsat' if proves_unsat else 'error'
+            verdict = self._solving_verdict()
+            if verdict is None:
+                # No account of how the search ended, so read the status alone.
+                # The search finished and produced nothing. From a model that
+                # decides the problem that IS the answer; from any other model
+                # it means something went wrong, because a bounded model that
+                # finishes unsolved has not concluded anything -- it has merely
+                # stopped.
+                return 'unsat' if proves_unsat else 'error'
+            # The solver said how its search ended. Only a refutation from a
+            # search that can prove one is a proof; an exhausted search that
+            # cannot (an unsafe heuristic, a tune switched off) concluded
+            # nothing, but nothing went wrong either.
+            if verdict == 'unsat':
+                return 'unsat' if proves_unsat else 'unknown'
+            return _OUTCOME_BY_VERDICT.get(verdict, 'error')
 
         # 'timeout', 'hlim', 'stopped', or a label this core does not know: the
         # search stopped early. Nothing was decided, and no completeness of the
@@ -240,19 +266,35 @@ class RunSummary:
         # N+1, which is exactly why 'hlim' must never become 'unsat'.
         return 'unknown'
 
+    def _solving_verdict(self) -> Optional[str]:
+        """The ``verdict`` the ``solving`` phase recorded, if it recorded one.
+
+        Only the single-phase solvers' ``solving`` phase: a horizon scan's
+        per-horizon verdicts are about one bound each, and never decide the run.
+        """
+        phase = self.get_phase("solving")
+        if phase is None:
+            return None
+        return phase.solver_stats.get('verdict')
+
     def finalize(self, final_status: str = "done",
-                 proves_unsat: bool = False) -> None:
+                 proves_unsat: Optional[bool] = None) -> None:
         """Finalize the summary: end time, outcome, stop reason, success.
 
-        ``proves_unsat`` says whether this run's model is a complete decision
-        procedure, i.e. whether its "no solution" is a sound proof. The core
-        cannot know that from the output - a bounded CP model and a planner print
-        the same thing - so the caller supplies it, normally from the registry's
-        ``get_proves_unsat``. Left False, a no-solution run is never concluded
-        unsat, which is the safe direction: understating what was proved.
+        ``proves_unsat`` says whether this run's model, under the search it
+        ran, is a complete decision procedure, i.e. whether its "no solution" is
+        a sound proof. The core cannot know that from the output - a bounded CP
+        model and a planner print the same thing - so the caller supplies it,
+        normally from the registry's ``get_proves_unsat``. Left False, a
+        no-solution run is never concluded unsat, which is the safe direction:
+        understating what was proved. None keeps the value from the previous
+        finalize, so re-finalizing to fold in a late phase cannot drop it.
         """
         self.end_time = datetime.now()
         self.final_status = final_status
+        if proves_unsat is not None:
+            self.proves_unsat = proves_unsat
+        proves_unsat = self.proves_unsat
 
         # Check if we have a successful timeout-based solution phase: an anytime
         # run that found a solution before the budget ran out still succeeded.

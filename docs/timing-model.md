@@ -375,6 +375,30 @@ run is ever concluded unsat, which understates rather than overstates what was
 proved. A status that stopped early (`timeout`, `hlim`, `stopped`) is never
 `unsat` however complete the model.
 
+For a planner, being able to prove depends on the **search** as well as the model.
+`get_proves_unsat(model, tune=..., solver_name=...)` is the model's
+`proves-unsat` AND the effective tune's. A tune preset may carry
+`proves-unsat: false` (for example a relaxation heuristic that prunes unsafely
+on tasks with axioms), which takes the claim away. A tune can never grant it to
+a model that cannot prove. `finalize` keeps the value on the summary as
+`proves_unsat`, and a later `finalize` that passes None reuses it. So a
+re-finalize that folds in a late phase, as `horizon_utils` does, cannot drop it.
+
+**A `solving` phase's verdict decides a completed run.** `failed` is the status
+of both a planner's proof and its crash, so `proves_unsat` alone would promote
+every crash of a complete model to `unsat`. Where the `solving` phase recorded a
+`verdict` (Fast Downward and SymK do, see above), it decides instead:
+
+| verdict | `proves_unsat` | outcome |
+|---|---|---|
+| `unsat` | True | `unsat` |
+| `unsat` | False | `unknown`: the search ran out, but cannot prove |
+| `unknown` / `killed` | either | `unknown` |
+| `error` | either | `error` |
+
+A run with no verdict is read as before. Per-horizon verdicts
+(`solving-horizon-N`) are about one bound each and never decide the run.
+
 ## what the core owns
 
 | concern | location |

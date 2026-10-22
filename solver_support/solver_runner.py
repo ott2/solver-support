@@ -638,15 +638,19 @@ class SolverRunner:
         
         return result
     
-    def finalize_summary(self, final_status: str = "done") -> None:
+    def finalize_summary(self, final_status: str = "done",
+                         proves_unsat: Optional[bool] = None) -> None:
         """
         Finalize and save the run summary.
-        
+
         Args:
             final_status: Final status message for the run
+            proves_unsat: Whether the run's model and search can prove
+                unsatisfiability, normally the registry's ``get_proves_unsat``
+                (see ``RunSummary.finalize``). None keeps the summary's value.
         """
         try:
-            self.summary.finalize(final_status)
+            self.summary.finalize(final_status, proves_unsat=proves_unsat)
             
             if self.summary_file:
                 self.summary.save(self.summary_file)

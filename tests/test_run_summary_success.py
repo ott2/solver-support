@@ -169,6 +169,64 @@ def test_bounded_model_finding_nothing_is_never_unsat():
     assert s.success is False
 
 
+# --- a solving phase's verdict separates a proof from a crash (issue #4) ------
+#
+# 'failed' is the status of both a planner's proof and its crash. Where the
+# solving phase recorded how its search ended, that decides - so wiring
+# proves_unsat through cannot turn every crash of a complete model into 'unsat'.
+
+@pytest.mark.parametrize("verdict, proves, outcome", [
+    ({"verdict": "unsat"}, True, "unsat"),
+    ({"verdict": "unsat", "verdict_reason": "exhausted"}, True, "unsat"),
+    # an exhausted search that cannot prove (an unsafe tune): nothing concluded
+    ({"verdict": "unsat", "verdict_reason": "exhausted"}, False, "unknown"),
+    ({"verdict": "error", "verdict_reason": "unsupported"}, True, "error"),
+    ({"verdict": "error", "verdict_reason": "input-error"}, True, "error"),
+    ({"verdict": "unknown", "verdict_reason": "incomplete"}, True, "unknown"),
+    ({"verdict": "unknown", "verdict_reason": "bounded"}, True, "unknown"),
+    ({"verdict": "killed"}, True, "unknown"),
+])
+def test_failed_run_is_read_through_its_verdict(verdict, proves, outcome):
+    s = _summary(_phase("translation", True), _phase("solving", False, **verdict))
+    s.finalize("failed", proves_unsat=proves)
+    assert s.outcome == outcome
+    assert s.success is (outcome == "unsat")
+
+
+def test_failed_without_a_verdict_keeps_its_old_reading():
+    """Solvers that record no verdict (and summaries written before verdicts
+    existed) mean what they always meant."""
+    s = _summary(_phase("solving", False))
+    s.finalize("failed", proves_unsat=True)
+    assert s.outcome == "unsat"
+
+
+def test_horizon_verdicts_never_decide_the_run():
+    """A horizon's `unsat` is about its bound; only a `solving` phase counts."""
+    s = _summary(_phase("solving-horizon-3", True, verdict="unsat"))
+    s.finalize("done", proves_unsat=False)
+    assert s.outcome == "error"
+
+
+def test_refinalize_keeps_proves_unsat():
+    """A re-finalize that does not repeat it (as horizon_utils does, to fold in a
+    late timeout-solution phase) must not drop the capability."""
+    s = _summary(_phase("solving", False, verdict="unsat"))
+    s.finalize("failed", proves_unsat=True)
+    s.finalize(s.final_status)
+    assert s.proves_unsat is True
+    assert s.outcome == "unsat"
+
+
+def test_proves_unsat_survives_a_round_trip():
+    s = _summary(_phase("solving", False, verdict="unsat"))
+    s.finalize("failed", proves_unsat=True)
+    loaded = RunSummary.from_dict(s.to_dict())
+    assert loaded.proves_unsat is True
+    loaded.finalize(loaded.final_status)
+    assert loaded.outcome == "unsat"
+
+
 def test_horizon_limit_is_not_unsat_even_for_a_complete_model():
     """Running out of horizons decides nothing, whatever the model can prove.
 

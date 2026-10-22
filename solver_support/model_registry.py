@@ -581,26 +581,51 @@ class ModelRegistry(CommandBuilderMixin):
             return False
         return model_config.get('objective-in-solution', False)
 
-    def get_proves_unsat(self, model_type: str) -> bool:
-        """Whether a model can soundly conclude unsatisfiability.
+    def get_proves_unsat(self, model_type: str, tune: Optional[str] = None,
+                         solver_name: Optional[str] = None) -> bool:
+        """Whether a run of this model can soundly conclude unsatisfiability.
 
-        True only for complete decision procedures (the pddl* planning models
-        and the upf/upflocal viewpoints, flagged ``proves-unsat: true``) whose
-        'no solution' run is a genuine unsat proof. Bounded CP models carry no
-        such field and so default to False - their 'failed'/'no solution' is an
-        error or an unfinished horizon search, never an unsat verdict.
+        True only for complete decision procedures (planning models, flagged
+        ``proves-unsat: true``) whose 'no solution' run is a genuine unsat
+        proof. Bounded CP models carry no such field and so default to False -
+        their 'failed'/'no solution' is an error or an unfinished horizon
+        search, never an unsat verdict.
+
+        For a planner, completeness also depends on the *search*: the same model
+        proves unsat under blind A* and not under a relaxation heuristic that
+        prunes unsafely on a task with axioms. So a tune preset may carry
+        ``proves-unsat: false``, and the answer is the model's flag AND the
+        effective tune's. A tune can only take the claim away, never grant it to
+        a model that cannot prove.
 
         Args:
             model_type: The model type.
+            tune: The explicit ``--tune``, if any. Otherwise the model's pinned
+                ``tune:``, then the solver's ``default_tune`` - the resolution
+                the solver used to build its command.
+            solver_name: The solver that ran, if not the model's own ``solver:``.
 
         Returns:
-            True if the model declares ``proves-unsat: true``, else False.
+            True if the model declares ``proves-unsat: true`` and the effective
+            tune does not declare ``proves-unsat: false``, else False.
         """
         try:
             _, model_config = self.resolve_model_variant(model_type)
         except (ValueError, ModelRegistryError):
             return False
-        return model_config.get('proves-unsat', False)
+        if not model_config.get('proves-unsat', False):
+            return False
+        solver_name = solver_name or model_config.get('solver')
+        if not solver_name:
+            return True
+        try:
+            solver_config = self.get_solver_config(self.get_tune_backend(solver_name))
+        except ModelRegistryError:
+            return True
+        tunes = solver_config.get('tune', {})
+        tune = tune or model_config.get('tune')
+        name = tune if tune in tunes else solver_config.get('default_tune')
+        return bool(tunes.get(name, {}).get('proves-unsat', True))
 
     def get_model_status(self, model_type: str) -> Tuple[Optional[str], Optional[str]]:
         """Return a model's health status and an optional detail string.

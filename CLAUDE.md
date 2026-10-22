@@ -162,9 +162,13 @@ in the budget it was given**, so a planner's proven unsat succeeds despite exiti
 non-zero. Exit codes cannot decide this in either direction — a solver given its
 own time limit stops *itself* and exits 0, so every phase of a fruitless run can
 succeed. `unsat` is only ever concluded when the caller passes
-`proves_unsat=True` (from the registry's `get_proves_unsat`); a bounded CP model
+`proves_unsat=True` (from the registry's `get_proves_unsat`, which is model AND
+tune — a tune preset may switch it off, never on); a bounded CP model
 *cannot* prove unsatisfiability, and `hlim` is never promoted to a proof however
-complete the model, since refuting horizons 1..N says nothing about N+1.
+complete the model, since refuting horizons 1..N says nothing about N+1. Where
+the `solving` phase recorded a `verdict`, that decides a `failed` run (`unsat`
+only from an `unsat` verdict), because `failed` is also what a crash looks like.
+`proves_unsat` is kept on the summary so a re-finalize cannot drop it.
 Best-effort phases (`visualisation`, `export`) are excluded from the success
 decision, and non-solving phases (`translation`, `modelling`, `visualisation`)
 may not set `solution_found`.

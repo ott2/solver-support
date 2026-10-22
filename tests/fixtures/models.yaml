@@ -28,7 +28,51 @@ models:
     objective-in-solution: true
     description: optimisation model carrying its objective in the solution
 
+  # A PDDL model solved directly by Fast Downward. It proves unsat, but only
+  # under a search that is complete and prunes safely - which is a property of
+  # the tune, so the `fd` presets below say which of them can.
+  pddl:
+    path: domain.pddl
+    solver: fd
+    detection_type: pddl
+    format-name: pddl
+    proves-unsat: true
+    description: PDDL model, solved by Fast Downward
+
+  # The same model with a pinned tune that cannot prove.
+  pddlff:
+    path: domain.pddl
+    solver: fd
+    detection_type: pddl
+    format-name: pddl
+    proves-unsat: true
+    tune: ff
+    description: PDDL model pinned to a greedy FF search
+
 solvers:
+  fd:
+    solver_type: fd
+    command: fd
+    extensions:
+      - .pddl
+    default_timeout: 600
+    default_tune: blind
+    tune:
+      blind:
+        search: "astar(blind())"
+        description: cost-optimal blind A*, complete on any task
+      ff:
+        search: "lazy_greedy([ff()])"
+        # FF prunes infinite-valued states even where axioms make that unsafe,
+        # so an exhausted search under it proves nothing.
+        proves-unsat: false
+        description: satisficing greedy best-first with FF
+      soup:
+        alias: seq-sat-fdss-2018
+        regime: anytime
+        proves-unsat: false
+        description: the anytime satisficing portfolio
+
   upffd:
     # Fast Downward through the Unified Planning Framework. The engine and the
     # FD search config are BOTH resolved from the effective --tune, which is
