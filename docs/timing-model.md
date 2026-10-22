@@ -238,6 +238,15 @@ N+1. Only the registry knows which models decide the problem itself
 - **Timeout**: the final, cut-off layer is bounded by `end_hint = duration -
   translate_time` (the search-relative kill time), so the blown-up deepest bound
   does not collapse to ~0.
+- **Its own limit, and the backstop above it**: `--search-time-limit T` is a CPU
+  rlimit on the search alone, while the runner's watchdog counts wall clock over
+  translation plus search. A watchdog at `T` therefore always fires first, and
+  the run loses the exit 23 and the final statistics block it would have
+  written. Size the watchdog with `fd_backstop(T, translate_allowance)`, which
+  is `T`, plus translation, plus `FD_EXIT_GRACE`. Then an external kill once
+  again means the planner ignored its limit. As with Savile Row, this is a
+  backstop and not a budget: to hold a run to a wall-clock `T`, shrink the search
+  limit.
 
 #### Verdicts: proof, limit, or rejection
 
@@ -409,7 +418,7 @@ A run with no verdict is read as before. Per-horizon verdicts
 | Savile Row `.info` split recording (per horizon) | `solver_horizon.py` (`_record_savilerow_times`) |
 | stats attached to a phase after each solve | `solver_runner.py`, `solver_horizon.py` |
 | the phase model (`RunSummary` / `PhaseResult`), outcome and success | `run_summary.py` |
-| relating the in-band limits to the external kill | `command_builders.py` (`savilerow_backstop`) |
+| relating the in-band limits to the external kill | `command_builders.py` (`savilerow_backstop`, `fd_backstop`) |
 
 Turning these per-phase stats into a unified per-horizon curve for display, a
 single "preprocess" baseline, and plots is the **consumer's** job — it reads the

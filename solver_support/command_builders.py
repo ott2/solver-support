@@ -56,6 +56,35 @@ def savilerow_backstop(timeout: int, solver_timeout: Optional[int] = None,
     return timeout + (timeout if solver_timeout is None else solver_timeout) + grace
 
 
+#: Seconds of slack above Fast Downward's in-band search limit. The driver turns
+#: SIGXCPU into exit 23 and the search then prints its final statistics block
+#: ("Actual search time", expansions); the grace lets that land. It is also what
+#: absorbs the gap between the CPU seconds the limit counts and the wall-clock
+#: seconds the watchdog counts, which a loaded machine widens.
+FD_EXIT_GRACE = 30
+
+
+def fd_backstop(timeout: int, translate_allowance: Optional[int] = None,
+                grace: int = FD_EXIT_GRACE) -> int:
+    """The external timeout that cannot preempt Fast Downward's own limit.
+
+    :meth:`build_fd_command` passes ``--search-time-limit T``, a CPU rlimit
+    on the *search* alone, while the runner's watchdog kills at ``T`` seconds of
+    wall clock over translation *plus* search. CPU time never exceeds the wall
+    time since search began, so a watchdog at ``T`` always fires first and the
+    in-band limit never gets to: the run is SIGTERMed instead of exiting 23, its
+    statistics are lost, and its verdict can only say ``killed``.
+
+    Sized like :func:`savilerow_backstop`: the search limit, plus what
+    translation may take before it (``translate_allowance``, defaulting to the
+    search limit, since translation is unbounded in band and only the caller
+    knows its cost), plus grace. The same caveat applies: this is a backstop,
+    not a wall-clock budget. To hold a run to ``T``, shrink the search limit.
+    """
+    allowance = timeout if translate_allowance is None else translate_allowance
+    return timeout + allowance + grace
+
+
 class CommandBuilderMixin:
     """The ``build_*_command`` methods mixed into :class:`ModelRegistry`."""
 

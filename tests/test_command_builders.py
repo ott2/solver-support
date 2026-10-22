@@ -257,3 +257,24 @@ class TestBackstop:
         # exactly the in-band sum races that write and usually wins.
         assert savilerow_backstop(45, 30) == 45 + 30 + SAVILEROW_FLUSH_GRACE
         assert SAVILEROW_FLUSH_GRACE > 0
+
+
+class TestFdBackstop:
+    """The watchdog must sit above Fast Downward's own search limit (issue #4).
+
+    `--search-time-limit T` is CPU over search alone, and translation runs
+    first, unbounded in band, so a wall-clock kill at T always fires first.
+    """
+
+    def test_translation_is_allowed_for_on_top_of_search(self):
+        from solver_support import fd_backstop
+        assert fd_backstop(60, 20, grace=5) == 85
+
+    def test_unsplit_allowance_defaults_to_the_search_limit(self):
+        from solver_support import fd_backstop
+        assert fd_backstop(60, grace=5) == 125
+
+    def test_grace_leaves_room_to_exit_23(self):
+        from solver_support import fd_backstop, FD_EXIT_GRACE
+        assert fd_backstop(60, 20) == 60 + 20 + FD_EXIT_GRACE
+        assert FD_EXIT_GRACE > 0

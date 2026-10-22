@@ -46,7 +46,9 @@ from .model_registry import (
     set_resource_root,
     set_user_config_finder,
 )
-from .command_builders import savilerow_backstop, SAVILEROW_FLUSH_GRACE
+from .command_builders import (
+    savilerow_backstop, SAVILEROW_FLUSH_GRACE, fd_backstop, FD_EXIT_GRACE,
+)
 
 # --- run configuration singleton ---
 from .global_state import global_state, GlobalState
@@ -68,8 +70,12 @@ from .solver_upfplan import UpfPlanSolver
 from .solver_horizon import HorizonBasedSolver, SavileRowSolver, ConjureSolver
 
 # --- execution, stats, run model ---
-from .solver_runner import SolverRunner, SolverResult, SolverExecutableError
-from .solver_stats import SolverStatsExtractor, detect_solver_from_command
+from .solver_runner import (
+    SolverRunner, SolverResult, SolverExecutableError, DIMACS_SAT_RETURNCODES,
+)
+from .solver_stats import (
+    SolverStatsExtractor, detect_solver_from_command, FD_ANSWER_RETURNCODES,
+)
 from .run_summary import RunSummary, PhaseResult, create_run_summary
 
 # --- file naming and horizon loop ---
@@ -109,6 +115,8 @@ __all__ = [
     "set_user_config_finder",
     "savilerow_backstop",
     "SAVILEROW_FLUSH_GRACE",
+    "fd_backstop",
+    "FD_EXIT_GRACE",
     # run config
     "global_state",
     "GlobalState",
@@ -130,6 +138,8 @@ __all__ = [
     "SolverRunner",
     "SolverResult",
     "SolverExecutableError",
+    "DIMACS_SAT_RETURNCODES",
+    "FD_ANSWER_RETURNCODES",
     "SolverStatsExtractor",
     "detect_solver_from_command",
     "RunSummary",
