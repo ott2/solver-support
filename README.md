@@ -97,4 +97,4 @@ config — that shape is the contract the loader implements.
 BSD-3-Clause — see
 [`LICENSE`](https://github.com/ott2/solver-support/blob/main/LICENSE).
 
-By András Salamon, with Claude Opus 4.8 and 5.
+By András Salamon, with Claude Opus 4.8, 5 and 5.5.
