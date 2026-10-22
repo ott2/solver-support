@@ -95,8 +95,15 @@ class FastDownwardSolver(Solver):
         if result.timed_out:
             self.logger.info(f"Fast Downward solver timed out after {result.duration:.1f}s")
             if anytime:
-                # Anytime portfolio: check if any plans were banked before the budget ran out
-                return self._handle_anytime_solutions(result)
+                # Anytime portfolio: check if any plans were banked before the
+                # budget ran out. None banked is a timeout like any other, not a
+                # failure - the same reading as the [34] branch below.
+                solution_file = self._handle_anytime_solutions(result)
+                if solution_file is None:
+                    raise TimeoutError(
+                        f"Anytime portfolio timed out after {result.duration:.1f}s "
+                        "with no solutions found")
+                return solution_file
             else:
                 # For regular PDDL, timeout with no solution is a timeout error
                 raise TimeoutError(f"Fast Downward solver timed out after {result.duration:.1f}s")

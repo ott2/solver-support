@@ -315,6 +315,19 @@ class TestFastDownwardSolver(TempDirTestMixin):
         self.mock_runner.logger.error.assert_called()
         assert "Fast Downward solver failed" in self.mock_runner.logger.error.call_args[0][0]
     
+    def test_fd_anytime_timeout_with_no_plans_is_a_timeout(self):
+        """An anytime portfolio killed with nothing banked raises TimeoutError,
+        so the run records `timeout` rather than `failed` (issue #4)."""
+        self.mock_runner.run_phase.return_value = SolverResult(
+            command=["fd", "--alias", "seq-sat-fdss-2018", "d.pddl", "p.pddl"],
+            returncode=-1, stdout="", stderr="", duration=60.0, timed_out=True)
+        param_file = self.temp_path / "problem.pddl"
+        param_file.write_text("problem content")
+
+        with pytest.raises(TimeoutError):
+            self.solver.solve(param_file=param_file, model_path="domain.pddl",
+                              anytime=True)
+
     def test_fd_solver_interrupted(self):
         """Test Fast Downward solving interrupted."""
         # Mock run_phase to be interrupted but with partial solution
