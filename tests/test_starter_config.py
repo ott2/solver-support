@@ -72,7 +72,7 @@ def test_enhsp_tunes_build(starter):
 
 
 def test_savilerow_builds(starter):
-    cmd = starter.build_savilerow_command('m.eprime', 'p.param', solver_name='kissat',
+    cmd = starter.build_savilerow_command('m.eprime', 'p.param', solver_name='savilerow',
                                           use_srjava=True)
     assert cmd[0] == 'savilerow'
     assert '-timelimit' in cmd
@@ -93,12 +93,29 @@ def test_conjure_builds_every_action(starter):
     assert cmd[:2] == ['conjure', 'translate-solution']
 
 
-def test_essence_runs_under_the_kissat_entry(starter):
-    """The Conjure route solves each horizon under the entry named `kissat`
-    (ConjureSolver's default, and get_tune_backend's), so the starter must
-    define one."""
-    assert starter.get_tune_backend('conjure') == 'kissat'
-    assert starter.get_solver_type('kissat') == 'savilerow'
+def test_conjure_names_its_savilerow_entry(starter):
+    """The starter does not rely on the legacy `kissat` fallback: its conjure
+    entry names the Savile Row entry it delegates to."""
+    assert starter.get_conjure_savilerow() == 'savilerow'
+    assert starter.get_tune_backend('conjure') == 'savilerow'
+    assert starter.get_solver_type('savilerow') == 'savilerow'
+    assert 'kissat' not in starter.config['solvers']
+
+
+def test_one_pddl_model_runs_under_every_planner(starter):
+    """Model and solver are orthogonal: one `pddl` model, three planners."""
+    pddl_models = [m for m, c in starter.config['models'].items()
+                   if c['path'].endswith('.pddl')]
+    assert pddl_models == ['pddl']
+    for solver in ('fd', 'symk', 'enhsp'):
+        assert starter.is_solver_compatible_with_model(solver, 'pddl')
+        assert starter.get_default_model_for_solver(solver) == 'pddl'
+    assert not starter.is_solver_compatible_with_model('savilerow', 'pddl')
+
+
+def test_every_solver_has_a_default_model_that_exists(starter):
+    for name, solver in starter.config['solvers'].items():
+        assert solver['default_model'] in starter.config['models'], name
 
 
 def test_incomplete_tunes_do_not_claim_proofs(starter):

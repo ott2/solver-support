@@ -107,3 +107,33 @@ class TestBackstop:
         solver._backstop = True
         assert solver._horizon_watchdog(60) == savilerow_backstop(60)
         assert solver._horizon_watchdog(None) is None   # no budget, nothing to size
+
+
+class TestWhichSavileRowEntry:
+    """Which Savile Row entry tailors and solves each horizon.
+
+    It used to be hardwired as `kissat`, one consumer's name for its SAT entry.
+    The caller may name it, a Conjure config may name it (`savilerow:`), and a
+    Savile Row run uses its own solver. `kissat` is only the last fallback.
+    """
+
+    def test_conjure_without_the_key_keeps_the_legacy_entry(self, fixture_registry):
+        assert fixture_registry.get_conjure_savilerow() == 'kissat'
+        assert fixture_registry.get_tune_backend('conjure') == 'kissat'
+        assert ConjureSolver(Mock()).solver_name == 'kissat'
+
+    def test_savilerow_scan_uses_the_runs_own_solver(self, fixture_registry):
+        runner = Mock()
+        runner.summary.solver = 'srminion'
+        assert SavileRowSolver(runner).solver_name == 'srminion'
+
+    def test_a_non_savilerow_run_solver_falls_back(self, fixture_registry):
+        runner = Mock()
+        runner.summary.solver = 'fd'
+        assert SavileRowSolver(runner).solver_name == 'kissat'
+
+    @pytest.mark.parametrize('cls', [SavileRowSolver, ConjureSolver])
+    def test_an_explicit_name_always_wins(self, fixture_registry, cls):
+        runner = Mock()
+        runner.summary.solver = 'srminion'
+        assert cls(runner, solver_name='srgecode').solver_name == 'srgecode'

@@ -145,7 +145,11 @@ appends `letting <name> be N` for each name in the model's (or its solver's)
 `horizon-params`. The historical names, `noSteps` and `maxMoves` + `horizon`,
 are one consumer's vocabulary. They survive only as the fallback for configs written
 before the key existed (`DEFAULT_HORIZON_PARAMS`, `LEGACY_HORIZON_PARAMS`). Do
-not add another name to that fallback; add the key to the config instead.
+not add another name to that fallback; add the key to the config instead. The
+same goes for which Savile Row entry solves each horizon. A `conjure` entry
+names it with `savilerow:` (`get_conjure_savilerow`), and a Savile Row scan
+uses the run's own solver. `kissat` survives only as the last fallback
+(`LEGACY_CONJURE_SAVILEROW`).
 
 **Two horizon models, never mixed in one run** (see `docs/timing-model.md`):
 a Savile Row *horizon scan* produces one `solving-horizon-N` phase per move budget,

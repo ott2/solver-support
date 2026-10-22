@@ -16,12 +16,18 @@
 #     set_default_config_path("config/models.yaml")
 #     set_resource_root(".")      # where the `path:` entries below resolve
 #
-# The file has two sections. `solvers:` says how to run each backend: its
-# command, its time-limit handling, and its `tune:` presets (the named search
-# configurations a `--tune` flag picks between). `models:` lists your models,
-# each pointing at a model file and naming the solver that runs it. Delete the
-# solvers you do not have installed and the models you do not need. Every
-# `command:` must be on PATH; check with `ModelRegistry().is_command_available`.
+# The file has two sections, and they are independent of each other.
+# `models:` lists your models: what the problem is, as a model file.
+# `solvers:` says how to run each solver: its command, its time-limit handling,
+# and its `tune:` presets (the named search configurations a `--tune` flag picks
+# between). A model's `solver:` is only its default. Any solver that takes the
+# same kind of file can run it, so the one `pddl` model below runs under `fd`,
+# `symk` or `enhsp` (`ModelRegistry.is_solver_compatible_with_model` decides).
+# Each solver's `default_model` is the model it runs when none is named.
+#
+# Delete the solvers you do not have installed and the models you do not need.
+# Every `command:` must be on PATH; check with
+# `ModelRegistry().is_command_available`.
 #
 # Not covered here, because each needs more from you than a config entry:
 #   - UPF-constructed models: the core shells out to a UPF planner CLI you
@@ -31,9 +37,9 @@
 
 models:
   # An Essence model. Conjure refines it to Essence Prime once (`modelling`),
-  # then for each horizon N = 2, 3, ... translates the instance, solves it with
-  # Savile Row under the `kissat` entry below, and translates the solution
-  # back. The horizon reaches the model as `letting horizon be N`, appended to
+  # then for each horizon N = 2, 3, ... translates the instance, has Savile
+  # Row tailor and solve it (under the entry the `conjure` solver names), and
+  # translates the solution back. The horizon reaches the model as `letting horizon be N`, appended to
   # the instance, for each name in `horizon-params`. These must be exactly the
   # parameters the model declares (here `given horizon : int(1..100)`), because
   # Conjure rejects a parameter the model does not have.
@@ -44,29 +50,17 @@ models:
     description: Essence model, refined by Conjure and solved via Savile Row
 
   # A PDDL planning model: `path` is the domain file, and the instance (problem)
-  # file is given per run. `proves-unsat: true` says a run that finds no plan
-  # has *proved* there is none, which holds for a complete search. The tunes
-  # that are not complete opt out below, so it is safe to leave on here.
+  # file is given per run. Fast Downward runs it by default; SymK and ENHSP
+  # can run it too. `proves-unsat: true` says a run that finds no plan has
+  # *proved* there is none, which holds for a complete search. The tunes that
+  # are not complete opt out below, so it is safe to leave on here.
   pddl:
     path: models/domain.pddl
     solver: fd
     proves-unsat: true
-    description: PDDL model, solved by Fast Downward
+    description: PDDL planning model
 
-  # The same domain, solved by SymK's symbolic search.
-  pddl-symk:
-    path: models/domain.pddl
-    solver: symk
-    proves-unsat: true
-    description: PDDL model, solved by SymK
-
-  # The same domain, solved by ENHSP (which also handles numeric PDDL).
-  pddl-enhsp:
-    path: models/domain.pddl
-    solver: enhsp
-    description: PDDL model, solved by ENHSP
-
-  # An Essence Prime model, solved directly by Savile Row and a SAT solver
+  # An Essence Prime model, tailored by Savile Row and solved by its backend
   # over horizons N = 1, 2, ..., each appended to the instance as
   # `letting horizon be N`, so the model declares `given horizon : int`.
   # A bounded model like this (and the Essence one above) cannot prove
@@ -75,12 +69,13 @@ models:
   # something.
   eprime:
     path: models/model.eprime
-    solver: kissat
+    solver: savilerow
     horizon-params: [horizon]
-    description: Essence Prime model, solved via Savile Row + SAT
+    description: Essence Prime model, tailored and solved by Savile Row
 
 solvers:
   fd:
+    default_model: pddl
     solver_type: fd
     command: fd              # Fast Downward's fast-downward.py, under this name
     extensions:
@@ -108,6 +103,7 @@ solvers:
 
   symk:
     # SymK is a Fast Downward fork with the same driver and output.
+    default_model: pddl
     solver_type: fd
     command: symk
     extensions:
@@ -126,6 +122,7 @@ solvers:
         description: backward symbolic search
 
   enhsp:
+    default_model: pddl
     solver_type: enhsp
     command: enhsp
     extensions:
@@ -144,7 +141,11 @@ solvers:
 
   conjure:
     solver_type: conjure
+    default_model: essence
     command: conjure
+    # The Savile Row entry that tailors and solves each horizon, and whose
+    # `tune:` presets an Essence run's `--tune` picks between.
+    savilerow: savilerow
     extensions:
       - .essence
     default_timeout: 600
@@ -160,11 +161,15 @@ solvers:
       - "translate-solution"
     description: refines Essence to Essence Prime and translates instances and solutions
 
-  # Savile Row with a SAT backend. The name matters: the Conjure route solves
-  # each horizon under the entry called `kissat`, and an Essence run's `--tune`
-  # picks among these presets.
-  kissat:
+  # Savile Row: it tailors the model and instance into the backend's input,
+  # which often decides the result as much as the backend does, then runs the
+  # backend. This entry targets SAT. For another backend, copy the entry under a
+  # name like `savilerow-minion`, set `backend: minion`, and give its tunes
+  # `minion_args` (backends: minion, ortools, gecode, chuffed; each reads its
+  # own `<backend>_args`).
+  savilerow:
     solver_type: savilerow
+    default_model: eprime
     command: savilerow
     extensions:
       - .eprime
@@ -172,8 +177,7 @@ solvers:
     # solver gets its own limit. The two run one after the other, so size the
     # runner's timeout with `savilerow_backstop`.
     default_timeout: 600
-    # `backend:` is absent, which means SAT. Other backends: minion, ortools,
-    # gecode, chuffed. Each reads its own `<backend>_args` tune key.
+    # `backend:` is absent, which means SAT.
     default_tune: default
     tune:
       default:

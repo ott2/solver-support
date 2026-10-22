@@ -63,6 +63,18 @@ models:
     description: horizon model inheriting its solver's horizon parameter
 
 solvers:
+  # Conjure with no `savilerow:` key, the shape configs written before the key
+  # existed have: it delegates each horizon to the legacy `kissat` entry.
+  conjure:
+    solver_type: conjure
+    command: conjure
+    extensions:
+      - .essence
+    default_timeout: null
+    modelling_args: ["modelling", "-ac"]
+    translate_parameter_args: ["translate-parameter"]
+    translate_solution_args: ["translate-solution"]
+
   fd:
     solver_type: fd
     command: fd

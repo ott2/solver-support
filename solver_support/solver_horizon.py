@@ -20,6 +20,7 @@ from .solver_base import Solver
 from .horizon_utils import horizon_search, calculate_horizon_timeout
 from .command_builders import savilerow_backstop
 from .objective import raw_objective_from_solution
+from .model_registry import LEGACY_CONJURE_SAVILEROW
 
 
 class HorizonBasedSolver(Solver):
@@ -30,14 +31,41 @@ class HorizonBasedSolver(Solver):
     #: before the key existed; a new config should name its own.
     DEFAULT_HORIZON_PARAMS: Tuple[str, ...] = ()
 
-    def __init__(self, solver_runner, solver_name: str = 'kissat'):
-        """Initialize with solver runner and optimization tracking."""
+    def __init__(self, solver_runner, solver_name: Optional[str] = None):
+        """Initialize with solver runner and optimization tracking.
+
+        ``solver_name`` is the Savile Row entry that solves each horizon. None
+        resolves it from the registry when first needed (see
+        :meth:`_default_solver_name`).
+        """
         super().__init__(solver_runner)
         self._best_objective = None
         self._has_timeout = False  # Track if we're running with a timeout
         self._stop_at_first = False  # regime: first stops the scan at the first solving horizon
-        self.solver_name = solver_name  # the backend config (kissat/minion/...)
+        self._solver_name = solver_name
         self._backstop = False  # size each horizon's kill above its in-band limits
+
+    @property
+    def solver_name(self) -> str:
+        """The Savile Row entry that solves each horizon."""
+        if self._solver_name is None:
+            return self._default_solver_name()
+        return self._solver_name
+
+    @solver_name.setter
+    def solver_name(self, value: Optional[str]) -> None:
+        self._solver_name = value
+
+    def _default_solver_name(self) -> str:
+        """The entry to use when the caller named none: the run's own solver
+        if it is a Savile Row entry, else the legacy name."""
+        try:
+            run_solver = self.runner.summary.solver
+            if global_state.model_registry.get_solver_type(run_solver) == 'savilerow':
+                return run_solver
+        except Exception:
+            pass
+        return LEGACY_CONJURE_SAVILEROW
 
     def _horizon_params(self) -> List[str]:
         """The parameter names this run sets to the horizon (see
@@ -384,7 +412,7 @@ class SavileRowSolver(HorizonBasedSolver):
 
     DEFAULT_HORIZON_PARAMS = ('noSteps',)
 
-    def __init__(self, solver_runner, solver_name: str = 'kissat'):
+    def __init__(self, solver_runner, solver_name: Optional[str] = None):
         """Initialize with solver runner and solver name."""
         super().__init__(solver_runner, solver_name)
 
@@ -510,6 +538,14 @@ class ConjureSolver(HorizonBasedSolver):
     """Solver implementation for Conjure (Essence to EPrime to solution)."""
 
     DEFAULT_HORIZON_PARAMS = ('maxMoves', 'horizon')
+
+    def _default_solver_name(self) -> str:
+        """The Savile Row entry the ``conjure`` config names, else the legacy
+        name (see :meth:`ModelRegistry.get_conjure_savilerow`)."""
+        try:
+            return global_state.model_registry.get_conjure_savilerow()
+        except Exception:
+            return LEGACY_CONJURE_SAVILEROW
 
     def solve(self, param_file: Path, **kwargs) -> Optional[Path]:
         """

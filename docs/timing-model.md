@@ -77,6 +77,11 @@ fields. All times are seconds unless noted.
   historical names, `noSteps` (Savile Row) or `maxMoves` + `horizon` (Conjure),
   so models written for those keep working. Only `letting` lines for those names
   are dropped from the instance first, not any line that mentions one.
+- **Which Savile Row entry**: Conjure only refines and translates. Each horizon
+  is tailored and solved by the Savile Row entry the `conjure` config names
+  (`savilerow: <entry>`), and an Essence run's `--tune` picks among that
+  entry's presets. A direct Savile Row scan uses the run's own solver. Without
+  either, it is `kissat`, the name older configs use.
 - **Split source**: Savile Row writes `<param>.info` per horizon;
   `_record_savilerow_times` (`solver_horizon.py`) reads `SavileRowTotalTime`
   (tailoring) → `savilerow_time` and `SolverTotalTime` (backend search) →

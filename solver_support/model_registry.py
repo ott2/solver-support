@@ -15,6 +15,13 @@ import shutil
 import yaml
 
 
+#: The Savile Row entry a Conjure solver delegates to when its config does not
+#: name one (``savilerow:``), and the entry a Savile Row horizon scan uses when
+#: neither the caller nor the run names one. Kept for configs written before
+#: those could be named; a new config should name its own.
+LEGACY_CONJURE_SAVILEROW = 'kissat'
+
+
 class ModelRegistryError(Exception):
     """Exception raised for model registry errors."""
     pass
@@ -693,17 +700,29 @@ class ModelRegistry(CommandBuilderMixin):
             return None
         return model_config.get('tune')
 
+    def get_conjure_savilerow(self, solver_name: str = 'conjure') -> str:
+        """The Savile Row entry a Conjure solver hands each horizon's solve to.
+
+        Conjure only refines and translates. Savile Row then tailors the
+        instance and runs its backend, under the solver entry the ``conjure``
+        config names with ``savilerow:``. A config without the key gets
+        ``kissat``, the name configs written before the key existed use.
+        """
+        return self.get_solver_config(solver_name).get(
+            'savilerow', LEGACY_CONJURE_SAVILEROW)
+
     def get_tune_backend(self, solver_name: str) -> str:
         """Return the backend whose tune presets govern ``--tune`` for a solver.
 
         Almost always the solver itself. The exception is the Conjure/Essence
-        path: its per-horizon inner solve is delegated to kissat (see
-        ConjureSolver), so an Essence run's ``--tune`` presets are kissat's, not
-        the tune-less ``conjure`` entry's. Keeping this mapping here means the
-        CLI validity check and ``build_*_command`` agree on what a tune means.
+        path: its per-horizon inner solve is delegated to a Savile Row entry
+        (:meth:`get_conjure_savilerow`), so an Essence run's ``--tune`` presets
+        are that entry's, not the tune-less ``conjure`` entry's. Keeping this
+        mapping here means the CLI validity check and ``build_*_command`` agree
+        on what a tune means.
         """
         if self.get_solver_type(solver_name) == 'conjure':
-            return 'kissat'
+            return self.get_conjure_savilerow(solver_name)
         return solver_name
 
     def get_valid_tunes(self, solver_name: str) -> List[str]:
