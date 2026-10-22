@@ -45,6 +45,8 @@ from .model_registry import (
     set_default_config_path,
     set_resource_root,
     set_user_config_finder,
+    starter_config_text,
+    write_starter_config,
 )
 from .command_builders import (
     savilerow_backstop, SAVILEROW_FLUSH_GRACE, fd_backstop, FD_EXIT_GRACE,
@@ -113,6 +115,8 @@ __all__ = [
     "set_default_config_path",
     "set_resource_root",
     "set_user_config_finder",
+    "starter_config_text",
+    "write_starter_config",
     "savilerow_backstop",
     "SAVILEROW_FLUSH_GRACE",
     "fd_backstop",

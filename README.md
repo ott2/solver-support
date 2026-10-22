@@ -42,6 +42,37 @@ Requires Python 3.9 or newer (3.9.6 is the system Python on macOS, and is
 supported deliberately — each release is built and tested against it). The only
 runtime dependencies are `psutil` and `PyYAML`.
 
+## Quick start
+
+The package ships no model registry, but it carries a commented starter one
+(Fast Downward, SymK, ENHSP and Savile Row) to copy and edit. Writing it out
+does not wire it; you point the registry at it:
+
+```python
+from pathlib import Path
+from solver_support import (
+    write_starter_config, set_default_config_path, set_resource_root,
+    global_state, SolverRunner, FastDownwardSolver, fd_backstop,
+)
+
+config = write_starter_config("config/models.yaml")   # once; then edit it
+set_default_config_path(config)
+set_resource_root(".")            # where the models' `path:` entries resolve
+
+registry = global_state.model_registry
+runner = SolverRunner(instance="p01", model="pddl", solver="fd", timeout=60,
+                      timestamp="run1", summary_file=Path("p01.json"))
+try:
+    plan = FastDownwardSolver(runner).solve(
+        Path("p01.pddl"), model_path=str(registry.get_model_path("pddl")),
+        watchdog=fd_backstop(60))         # let the planner's own limit fire
+    status = "done" if plan else "failed"
+except TimeoutError:
+    status = "timeout"
+runner.finalize_summary(status, proves_unsat=registry.get_proves_unsat("pddl"))
+print(runner.summary.outcome)     # solved / unsat / unknown / error
+```
+
 ## Usage
 
 See [`docs/injection-api.md`](https://github.com/ott2/solver-support/blob/main/docs/injection-api.md)

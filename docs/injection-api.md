@@ -28,6 +28,12 @@ candidates bind when the registry is constructed rather than at import. Until a
 default config path is registered, constructing `ModelRegistry()` raises
 `ModelRegistryError` rather than guessing a consumer's config.
 
+To start a config from scratch, `write_starter_config(path)` writes out the
+commented starter registry that ships as package data (`starter_config_text()`
+returns its text). Writing it out wires nothing. The registry still raises until
+`set_default_config_path` names it, so a starter file on disk can never change
+what an unwired core does.
+
 ### 2. objective extraction (`solver_support.objective`)
 
 The core asks for a solution's objective at a few points but does not know how a

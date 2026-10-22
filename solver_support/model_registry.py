@@ -825,6 +825,39 @@ class ModelRegistry(CommandBuilderMixin):
         return self.get_tune_regime(solver_name, tune) == 'anytime'
 
 
+def starter_config_text() -> str:
+    """The starter ``models.yaml`` shipped with the package, as text.
+
+    A commented example registry - Fast Downward, SymK, ENHSP and Savile Row -
+    for a new user to copy and edit. It is never loaded implicitly: the core
+    still ships unwired, and :class:`ModelRegistry` still raises until a config
+    path is set. Unlike :meth:`ModelRegistry.dump_config` it keeps its comments,
+    which is what makes it fit to start from.
+    """
+    from importlib.resources import files
+    return files('solver_support').joinpath('starter', 'models.yaml').read_text(
+        encoding='utf-8')
+
+
+def write_starter_config(path, overwrite: bool = False) -> Path:
+    """Write the starter ``models.yaml`` to ``path`` and return the path.
+
+    The quick start for a new user, who then wires it with
+    :func:`set_default_config_path`. Writing it out does *not* wire it: having
+    a starter file on disk must never change what an unwired registry does.
+
+    Raises:
+        FileExistsError: if ``path`` exists and ``overwrite`` is False - an edited
+            registry is the user's work, and a starter is not worth losing it for.
+    """
+    path = Path(path)
+    if path.exists() and not overwrite:
+        raise FileExistsError(f"{path} already exists (pass overwrite=True to replace it)")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(starter_config_text(), encoding='utf-8')
+    return path
+
+
 def get_default_registry() -> ModelRegistry:
     """
     Get a default model registry instance.

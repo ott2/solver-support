@@ -1,0 +1,144 @@
+# A starter model registry for solver-support.
+#
+# solver-support ships unwired: it has no models.yaml of its own and will not
+# guess one. This file is a starting point to copy and edit, not a default.
+# Write it out with
+#
+#     from solver_support import write_starter_config
+#     write_starter_config("config/models.yaml")
+#
+# and wire it before first use:
+#
+#     from solver_support import set_default_config_path, set_resource_root
+#     set_default_config_path("config/models.yaml")
+#     set_resource_root(".")      # where the `path:` entries below resolve
+#
+# The file has two sections. `solvers:` says how to run each backend: its
+# command, its time-limit handling, and its `tune:` presets (the named search
+# configurations a `--tune` flag picks between). `models:` lists your models,
+# each pointing at a model file and naming the solver that runs it. Delete the
+# solvers you do not have installed and the models you do not need. Every
+# `command:` must be on PATH; check with `ModelRegistry().is_command_available`.
+#
+# Not covered here, because each needs more from you than a config entry:
+#   - UPF-constructed models: the core shells out to a UPF planner CLI you
+#     provide (see docs/injection-api.md, seam 4).
+#   - Conjure / Essence models: a `conjure` solver needs `modelling_args`,
+#     `translate_parameter_args` and `translate_solution_args`.
+#   - Scoring: what an objective means is injected, not configured
+#     (docs/injection-api.md, seam 2).
+
+models:
+  # A PDDL planning model: `path` is the domain file, and the instance (problem)
+  # file is given per run. `proves-unsat: true` says a run that finds no plan
+  # has *proved* there is none, which holds for a complete search. The tunes
+  # that are not complete opt out below, so it is safe to leave on here.
+  pddl:
+    path: models/domain.pddl
+    solver: fd
+    proves-unsat: true
+    description: PDDL model, solved by Fast Downward
+
+  # The same domain, solved by SymK's symbolic search.
+  pddl-symk:
+    path: models/domain.pddl
+    solver: symk
+    proves-unsat: true
+    description: PDDL model, solved by SymK
+
+  # The same domain, solved by ENHSP (which also handles numeric PDDL).
+  pddl-enhsp:
+    path: models/domain.pddl
+    solver: enhsp
+    description: PDDL model, solved by ENHSP
+
+  # An Essence Prime constraint model, solved through Savile Row and a SAT
+  # solver. A bounded model like this cannot prove unsatisfiability, so it does
+  # not claim `proves-unsat`. Set `opt: true` if the model minimises or
+  # maximises something.
+  eprime:
+    path: models/model.eprime
+    solver: savilerow
+    description: Essence Prime model, solved via Savile Row + SAT
+
+solvers:
+  fd:
+    solver_type: fd
+    command: fd              # Fast Downward's fast-downward.py, under this name
+    extensions:
+      - .pddl
+    default_timeout: 600     # seconds; becomes --search-time-limit
+    default_tune: blind
+    tune:
+      blind:
+        search: "astar(blind())"
+        description: cost-optimal blind A*; complete on any task
+      lmcut:
+        search: "astar(lmcut())"
+        description: cost-optimal A* with LM-cut; rejects tasks with axioms
+      ff:
+        search: "lazy_greedy([ff()])"
+        # FF prunes states it scores as infinite, which is unsafe on tasks with
+        # axioms, so a search under it that runs out of states proves nothing.
+        proves-unsat: false
+        description: satisficing greedy best-first search with FF
+      soup:
+        alias: seq-sat-fdss-2018
+        regime: anytime
+        proves-unsat: false
+        description: anytime satisficing portfolio, keeps improving its plan
+
+  symk:
+    # SymK is a Fast Downward fork with the same driver and output.
+    solver_type: fd
+    command: symk
+    extensions:
+      - .pddl
+    default_timeout: 600
+    default_tune: bd
+    tune:
+      bd:
+        search: "sym_bd()"
+        description: bidirectional symbolic search
+      fw:
+        search: "sym_fw()"
+        description: forward symbolic search
+      bw:
+        search: "sym_bw()"
+        description: backward symbolic search
+
+  enhsp:
+    solver_type: enhsp
+    command: enhsp
+    extensions:
+      - .pddl
+    # ENHSP has no time limit of its own outside anytime mode; the runner's
+    # timeout stops it.
+    default_timeout: 600
+    default_tune: opt
+    tune:
+      opt:
+        planner: opt-blind
+        description: optimal search, blind heuristic
+      sat:
+        planner: sat-hmrp
+        description: satisficing search, MRP heuristic
+
+  savilerow:
+    solver_type: savilerow
+    command: savilerow
+    extensions:
+      - .eprime
+    # Seconds. Savile Row's own -timelimit bounds tailoring, then the SAT
+    # solver gets its own limit. The two run one after the other, so size the
+    # runner's timeout with `savilerow_backstop`.
+    default_timeout: 600
+    # `backend:` is absent, which means SAT. Other backends: minion, ortools,
+    # gecode, chuffed. Each reads its own `<backend>_args` tune key.
+    default_tune: default
+    tune:
+      default:
+        sat_args:
+          - "-run-solver"
+          - "-sat"
+        description: Savile Row's default SAT solver

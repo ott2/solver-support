@@ -81,6 +81,11 @@ zip-safe = false
 [tool.setuptools.packages.find]
 include = ["solver_support*"]
 
+# The starter registry `write_starter_config` copies out. Package data, not a
+# default: nothing loads it unless a user writes it out and wires it.
+[tool.setuptools.package-data]
+solver_support = ["starter/*.yaml"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
