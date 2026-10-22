@@ -134,3 +134,10 @@ def test_errors_say_what_to_do(tmp_path):
             ModelRegistry()
     finally:
         mr.set_default_config_path(saved)
+
+
+def test_starter_models_name_their_horizon_parameter(starter):
+    """So a new user's model declares one `given horizon`, never the
+    historical names the fallback keeps for older configs."""
+    for model in ('essence', 'eprime'):
+        assert starter.get_horizon_params(model, ('legacy',)) == ['horizon']

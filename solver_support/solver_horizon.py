@@ -10,7 +10,7 @@ import os
 import shutil
 import time
 from pathlib import Path
-from typing import Optional, List
+from typing import Optional, List, Tuple
 
 from .solver_stats import SolverStatsExtractor
 from .solver_runner import SolverExecutableError
@@ -18,11 +18,17 @@ from .global_state import global_state
 from .file_management import SolutionFileNamer, ObjectiveFileManager
 from .solver_base import Solver
 from .horizon_utils import horizon_search, calculate_horizon_timeout
+from .command_builders import savilerow_backstop
 from .objective import raw_objective_from_solution
 
 
 class HorizonBasedSolver(Solver):
     """Base class for solvers that use horizon search with optimization support."""
+
+    #: The parameter(s) this route sets to the horizon, for a model whose
+    #: registry entry names none (``horizon-params``). Kept for configs written
+    #: before the key existed; a new config should name its own.
+    DEFAULT_HORIZON_PARAMS: Tuple[str, ...] = ()
 
     def __init__(self, solver_runner, solver_name: str = 'kissat'):
         """Initialize with solver runner and optimization tracking."""
@@ -31,6 +37,43 @@ class HorizonBasedSolver(Solver):
         self._has_timeout = False  # Track if we're running with a timeout
         self._stop_at_first = False  # regime: first stops the scan at the first solving horizon
         self.solver_name = solver_name  # the backend config (kissat/minion/...)
+        self._backstop = False  # size each horizon's kill above its in-band limits
+
+    def _horizon_params(self) -> List[str]:
+        """The parameter names this run sets to the horizon (see
+        :meth:`ModelRegistry.get_horizon_params`)."""
+        try:
+            return global_state.model_registry.get_horizon_params(
+                self.runner.summary.model, self.DEFAULT_HORIZON_PARAMS)
+        except Exception:
+            return list(self.DEFAULT_HORIZON_PARAMS)
+
+    def _horizon_watchdog(self, horizon_timeout: Optional[int]) -> Optional[int]:
+        """The kill for one horizon's Savile Row run, or None for the runner's.
+
+        With ``backstop=True`` it is :func:`savilerow_backstop` over the same
+        budget the command was built with: Savile Row's ``-timelimit`` and the
+        solver's own limit each get ``horizon_timeout`` and run one after the
+        other, so a kill below their sum can land before Savile Row writes its
+        ``.info`` and loses every statistic. Off by default, because a scan
+        killed at the backstop can overrun the runner's timeout by up to about
+        that timeout again.
+        """
+        if self._backstop and horizon_timeout is not None:
+            return savilerow_backstop(horizon_timeout)
+        return None
+
+    def _write_horizon(self, horizon_param_file: Path, n: int,
+                       names: List[str]) -> bool:
+        """Append ``letting <name> be n`` for each horizon parameter."""
+        try:
+            with open(horizon_param_file, 'a') as f:
+                for name in names:
+                    f.write(f"letting {name} be {n}\n")
+            return True
+        except Exception as e:
+            self.logger.error(f"Failed to add horizon constraints: {e}")
+            return False
 
     def _generate_objective_file_path(self, n: int) -> Optional[Path]:
         """Generate the objective file path for a given horizon, or None.
@@ -339,6 +382,8 @@ class HorizonBasedSolver(Solver):
 class SavileRowSolver(HorizonBasedSolver):
     """Solver implementation for Savile Row with horizon search."""
 
+    DEFAULT_HORIZON_PARAMS = ('noSteps',)
+
     def __init__(self, solver_runner, solver_name: str = 'kissat'):
         """Initialize with solver runner and solver name."""
         super().__init__(solver_runner, solver_name)
@@ -352,6 +397,10 @@ class SavileRowSolver(HorizonBasedSolver):
                 - model_path: Path to Essence Prime model file (required)
                 - startat: Starting horizon value (default: 1)
                 - stopat: Highest horizon to try (default: 100)
+                - backstop: kill each horizon at savilerow_backstop of its
+                  budget rather than at the runner's timeout, so Savile Row's
+                  own limits fire first and its statistics survive
+                  (default: False)
                 - objbound: Objective bound constraint for optimization models
         Returns:
             Path to solution file if successful, None otherwise
@@ -363,6 +412,7 @@ class SavileRowSolver(HorizonBasedSolver):
 
         startat = kwargs.get('startat', 1)
         stopat = kwargs.get('stopat', 100)
+        self._backstop = bool(kwargs.get('backstop', False))
         objbound = kwargs.get('objbound')
 
         # Setup optimization parameters
@@ -372,6 +422,7 @@ class SavileRowSolver(HorizonBasedSolver):
         # Track total elapsed time for timeout management
         total_start_time = time.time()
         original_timeout = self.runner.timeout
+        horizon_params = self._horizon_params()
 
         def savilerow_horizon_callback(n: int, horizon_param_file: Path) -> Optional[Path]:
             """Execute Savile Row for a specific horizon."""
@@ -386,12 +437,7 @@ class SavileRowSolver(HorizonBasedSolver):
                 # Remove any existing objective file before this horizon run
                 self._prepare_objective_file(obj_file)
 
-            # Add Savile Row specific constraint
-            try:
-                with open(horizon_param_file, 'a') as f:
-                    f.write(f"letting noSteps be {n}\n")
-            except Exception as e:
-                self.logger.error(f"Failed to add noSteps constraint: {e}")
+            if not self._write_horizon(horizon_param_file, n, horizon_params):
                 return None
 
             # Build Savile Row command for this horizon using helper method
@@ -407,7 +453,8 @@ class SavileRowSolver(HorizonBasedSolver):
                 f"solving-horizon-{n}",
                 savilerow_cmd,
                 expected_outputs=[str(expected_solution)],
-                horizon_number=n
+                horizon_number=n,
+                timeout=self._horizon_watchdog(horizon_timeout)
             )
 
             # Record Savile Row's tailoring vs solver time split from the .info
@@ -454,12 +501,15 @@ class SavileRowSolver(HorizonBasedSolver):
         return horizon_search(
             self.runner, param_file, startat, savilerow_horizon_callback, self.logger,
             stopat=stopat,
-            extra_constraints_callback=self._add_objective_constraint if (is_opt_model and continue_scan) else None
+            extra_constraints_callback=self._add_objective_constraint if (is_opt_model and continue_scan) else None,
+            horizon_params=horizon_params
         )
 
 
 class ConjureSolver(HorizonBasedSolver):
     """Solver implementation for Conjure (Essence to EPrime to solution)."""
+
+    DEFAULT_HORIZON_PARAMS = ('maxMoves', 'horizon')
 
     def solve(self, param_file: Path, **kwargs) -> Optional[Path]:
         """
@@ -470,6 +520,10 @@ class ConjureSolver(HorizonBasedSolver):
                 - model_path: Path to Essence model file (required)
                 - startat: Starting horizon value (default: 1)
                 - stopat: Highest horizon to try (default: 100)
+                - backstop: kill each horizon at savilerow_backstop of its
+                  budget rather than at the runner's timeout, so Savile Row's
+                  own limits fire first and its statistics survive
+                  (default: False)
         Returns:
             Path to solution file if successful, None otherwise
         """
@@ -480,6 +534,7 @@ class ConjureSolver(HorizonBasedSolver):
 
         startat = kwargs.get('startat', 1)
         stopat = kwargs.get('stopat', 100)
+        self._backstop = bool(kwargs.get('backstop', False))
 
         # Step 1: Modelling - create EPrime from Essence
         epm_path = self._do_conjure_modelling(str(model_path))
@@ -493,19 +548,14 @@ class ConjureSolver(HorizonBasedSolver):
         # Track total elapsed time for timeout management
         total_start_time = time.time()
         original_timeout = self.runner.timeout
+        horizon_params = self._horizon_params()
 
         def conjure_horizon_callback(n: int, horizon_param_file: Path) -> Optional[Path]:
             """Execute Conjure solve and translate for a specific horizon."""
             # Calculate remaining timeout for this horizon step
             horizon_timeout = calculate_horizon_timeout(total_start_time, original_timeout, n, self.logger)
 
-            # Add Conjure specific constraints
-            try:
-                with open(horizon_param_file, 'a') as f:
-                    f.write(f"letting maxMoves be {n}\n")
-                    f.write(f"letting horizon be {n}\n")
-            except Exception as e:
-                self.logger.error(f"Failed to add horizon constraints: {e}")
+            if not self._write_horizon(horizon_param_file, n, horizon_params):
                 return None
 
             # Execute the solve and translate pipeline
@@ -541,7 +591,8 @@ class ConjureSolver(HorizonBasedSolver):
             self.runner, param_file, startat, conjure_horizon_callback, self.logger,
             min_horizon=2,
             stopat=stopat,
-            extra_constraints_callback=self._add_objective_constraint if (is_opt_model and continue_scan) else None
+            extra_constraints_callback=self._add_objective_constraint if (is_opt_model and continue_scan) else None,
+            horizon_params=horizon_params
         )
 
     def _do_conjure_modelling(self, model_path: str) -> Optional[Path]:
@@ -629,7 +680,8 @@ class ConjureSolver(HorizonBasedSolver):
             f"solving-horizon-{n}",
             savilerow_cmd,
             expected_outputs=[str(eps_file)],
-            horizon_number=n
+            horizon_number=n,
+            timeout=self._horizon_watchdog(horizon_timeout)
         )
 
         # Record Savile Row's tailoring vs solver time split. Here Savile Row is

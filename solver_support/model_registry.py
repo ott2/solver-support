@@ -8,7 +8,7 @@ from the original bash run script.
 """
 
 from pathlib import Path
-from typing import Dict, Any, Optional, List, Tuple, Callable
+from typing import Dict, Any, Optional, List, Tuple, Callable, Sequence
 import copy
 import os
 import shutil
@@ -651,6 +651,33 @@ class ModelRegistry(CommandBuilderMixin):
         except (ValueError, ModelRegistryError):
             return None, None
         return model_config.get('status'), model_config.get('status-detail')
+
+    def get_horizon_params(self, model_type: str,
+                           default: Sequence[str] = ()) -> List[str]:
+        """The parameter names a horizon scan sets to the horizon for a model.
+
+        Each horizon N reaches the model as ``letting <name> be N`` appended to
+        the instance, so these must be exactly the names the model declares:
+        Conjure rejects a ``letting`` for a parameter the model does not have.
+        Read from the model's ``horizon-params``, then its solver's, then
+        ``default`` - the route's own historical names, which configs written
+        before the key existed rely on. A single name may be given as a string.
+        Resolves aliases and never raises (an unknown model gets ``default``).
+        """
+        try:
+            _, model_config = self.resolve_model_variant(model_type)
+        except (ValueError, ModelRegistryError):
+            return list(default)
+        names = model_config.get('horizon-params')
+        if names is None:
+            try:
+                names = self.get_solver_config(
+                    model_config.get('solver', '')).get('horizon-params')
+            except ModelRegistryError:
+                names = None
+        if names is None:
+            return list(default)
+        return [names] if isinstance(names, str) else list(names)
 
     def get_model_default_tune(self, model_type: str) -> Optional[str]:
         """Return a model's preferred ``--tune`` preset, or None.

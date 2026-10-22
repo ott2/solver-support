@@ -140,6 +140,13 @@ the engine names, because a UPF command embeds its engine (`-s fast-downward`) a
 would otherwise be parsed by the FD extractor, which can't read upfplan's plan format.
 `enhsp` must be matched before the `fd`/`symk` branch for the same reason.
 
+**The horizon parameter is the registry's, not the core's.** A horizon scan
+appends `letting <name> be N` for each name in the model's (or its solver's)
+`horizon-params`. The historical names, `noSteps` and `maxMoves` + `horizon`,
+are one consumer's vocabulary. They survive only as the fallback for configs written
+before the key existed (`DEFAULT_HORIZON_PARAMS`, `LEGACY_HORIZON_PARAMS`). Do
+not add another name to that fallback; add the key to the config instead.
+
 **Two horizon models, never mixed in one run** (see `docs/timing-model.md`):
 a Savile Row *horizon scan* produces one `solving-horizon-N` phase per move budget,
 while the planners produce a single `solving` phase carrying a `cost_layers` list from

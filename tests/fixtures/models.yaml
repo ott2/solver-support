@@ -49,6 +49,19 @@ models:
     tune: ff
     description: PDDL model pinned to a greedy FF search
 
+  # Horizon models naming the parameter the scan sets to the horizon: one on
+  # the model itself, one inheriting it from its solver, and one with neither,
+  # which gets the route's historical names.
+  stepped:
+    path: models/Stepped.eprime
+    solver: srsat
+    horizon-params: steps
+    description: horizon model naming its own horizon parameter
+  minionstepped:
+    path: models/MinionStepped.eprime
+    solver: srminion
+    description: horizon model inheriting its solver's horizon parameter
+
 solvers:
   fd:
     solver_type: fd
@@ -130,6 +143,7 @@ solvers:
       - .eprime
     default_timeout: null
     backend: minion
+    horizon-params: [t]
     default_tune: default
     tune:
       default:

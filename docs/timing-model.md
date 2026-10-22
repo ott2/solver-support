@@ -70,6 +70,13 @@ fields. All times are seconds unless noted.
 ### Savile Row (Conjure / Essence Prime models)
 
 - **Shape**: a horizon scan — one `solving-horizon-N` phase per move budget.
+  Each horizon reaches the model as `letting <name> be N`, appended to the
+  instance for every name in the model's `horizon-params` (or its solver's).
+  These must be exactly the parameters the model declares, since Conjure
+  rejects a `letting` for one it lacks. A config without the key gets the
+  historical names, `noSteps` (Savile Row) or `maxMoves` + `horizon` (Conjure),
+  so models written for those keep working. Only `letting` lines for those names
+  are dropped from the instance first, not any line that mentions one.
 - **Split source**: Savile Row writes `<param>.info` per horizon;
   `_record_savilerow_times` (`solver_horizon.py`) reads `SavileRowTotalTime`
   (tailoring) → `savilerow_time` and `SolverTotalTime` (backend search) →
@@ -175,6 +182,14 @@ it reached the solver.
 So size the external kill with `savilerow_backstop(T, S)` — `T + S` plus grace
 for the flush — and it comes to mean "the toolchain ignored its limits", a
 genuine fault rather than an ordinary and lossy way for a run to end.
+
+The built-in horizon scans do this per horizon when asked:
+`SavileRowSolver.solve(..., backstop=True)` and `ConjureSolver.solve(...,
+backstop=True)` kill each horizon at `savilerow_backstop(R)`, where `R` is the
+budget that horizon's command was built with. Without it, each horizon is
+killed at the runner's own timeout, as before. It is opt-in because a scan
+killed at the backstop can overrun the runner's timeout by up to about that
+timeout again, which would change the run times of an existing consumer.
 
 **To hold a run to a wall-clock budget, shrink the pair, not the backstop.**
 Give the solver `S = T - (what tailoring will cost)`. The core picks no reserve

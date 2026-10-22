@@ -6,10 +6,11 @@ that can be used by different solver types (Savile Row, Conjure, etc.).
 """
 
 import logging
+import re
 import shutil
 import time
 from pathlib import Path
-from typing import Optional, Callable, Tuple
+from typing import Optional, Callable, Sequence, Tuple
 
 from .file_management import SolutionFileNamer
 from .global_state import global_state
@@ -76,6 +77,20 @@ def _create_main_solution_from_best(runner: SolverRunner, best_solution_found: P
     return main_solution
 
 
+#: Every name a horizon scan has ever written, for a caller that does not say
+#: which it writes. Only `letting` lines for these are dropped from the instance;
+#: the scan's callback then appends its own for the horizon at hand.
+LEGACY_HORIZON_PARAMS = ('noSteps', 'maxMoves', 'horizon')
+
+_LETTING_NAME_RE = re.compile(r'^\s*letting\s+(\w+)\b')
+
+
+def _is_horizon_letting(line: str, names: Sequence[str]) -> bool:
+    """Whether ``line`` sets one of the horizon parameters ``names``."""
+    m = _LETTING_NAME_RE.match(line)
+    return bool(m) and m.group(1) in names
+
+
 def horizon_search(runner: SolverRunner,
                    param_file: Path,
                    startat: int,
@@ -83,7 +98,8 @@ def horizon_search(runner: SolverRunner,
                    logger: logging.Logger,
                    min_horizon: int = 1,
                    stopat: int = 100,
-                   extra_constraints_callback: Optional[Callable[[Path, int], None]] = None) -> Optional[Path]:
+                   extra_constraints_callback: Optional[Callable[[Path, int], None]] = None,
+                   horizon_params: Optional[Sequence[str]] = None) -> Optional[Path]:
     """
     Generic horizon-extending search loop.
 
@@ -97,6 +113,9 @@ def horizon_search(runner: SolverRunner,
         min_horizon: Minimum allowed horizon value
         stopat: Highest horizon to try (inclusive upper limit of the scan)
         extra_constraints_callback: Optional function(horizon_param_file, n) to add extra constraints
+        horizon_params: The parameter names the callback sets to the horizon, so
+            an instance's own value for them is dropped first. None means
+            LEGACY_HORIZON_PARAMS.
 
     Returns:
         Path to solution file if found, None otherwise
@@ -137,7 +156,8 @@ def horizon_search(runner: SolverRunner,
             return None
         
         # Create parameter file with horizon constraints
-        horizon_param_file = create_horizon_param_file(param_file, output_dir, n, logger, runner)
+        horizon_param_file = create_horizon_param_file(
+            param_file, output_dir, n, logger, runner, horizon_params=horizon_params)
         if not horizon_param_file:
             continue
             
@@ -200,7 +220,8 @@ def horizon_search(runner: SolverRunner,
     return None
 
 
-def create_horizon_param_file(param_file: Path, output_dir: Path, n: int, logger: logging.Logger, runner: SolverRunner = None) -> Optional[Path]:
+def create_horizon_param_file(param_file: Path, output_dir: Path, n: int, logger: logging.Logger, runner: SolverRunner = None,
+                              horizon_params: Optional[Sequence[str]] = None) -> Optional[Path]:
     """
     Create parameter file with base content, ready for horizon-specific constraints.
     
@@ -210,6 +231,9 @@ def create_horizon_param_file(param_file: Path, output_dir: Path, n: int, logger
         n: Horizon value
         logger: Logger instance
         runner: SolverRunner instance for consistent naming (optional for backward compatibility)
+        horizon_params: Names whose `letting` lines are dropped from the
+            instance, since the caller sets them per horizon. None means
+            LEGACY_HORIZON_PARAMS.
         
     Returns:
         Path to created parameter file, or None if creation failed
@@ -233,12 +257,13 @@ def create_horizon_param_file(param_file: Path, output_dir: Path, n: int, logger
         with open(param_file, 'r') as f:
             param_content = f.read()
         
-        # Remove any existing horizon-related lines
-        param_lines = []
-        for line in param_content.splitlines():
-            # Remove existing horizon constraint lines
-            if not any(keyword in line for keyword in ['noSteps', 'maxMoves', 'horizon']):
-                param_lines.append(line)
+        # Drop the instance's own value for each horizon parameter: the caller
+        # appends one per horizon, and two lettings of a name is an error. Only
+        # a `letting` of exactly that name goes - a line that merely mentions
+        # it (a comment, `letting horizonLimit`) is the instance's own.
+        names = LEGACY_HORIZON_PARAMS if horizon_params is None else tuple(horizon_params)
+        param_lines = [line for line in param_content.splitlines()
+                       if not _is_horizon_letting(line, names)]
         
         # Write base parameter file
         with open(horizon_param_file, 'w') as f:
