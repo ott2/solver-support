@@ -1,0 +1,6 @@
+(define (domain toggle)
+  (:requirements :strips)
+  (:predicates (p) (q) (r))
+  (:action make-p :parameters () :precondition () :effect (and (p) (not (q))))
+  (:action make-q :parameters () :precondition () :effect (and (q) (not (p))))
+  (:action make-r :parameters () :precondition (and (p)) :effect (r)))

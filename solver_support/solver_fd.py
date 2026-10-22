@@ -7,13 +7,18 @@ PDDL planner with support for both standard and anytime (portfolio) modes.
 
 import os
 from pathlib import Path
-from typing import Optional
+from typing import Any, Dict, Optional
 
 from .solver_base import Solver
 from .solver_runner import SolverResult
+from .solver_stats import FD_ANSWER_RETURNCODES, SolverStatsExtractor
 from .file_management import SolutionFileNamer
 from .utilities import relativize_path
 from .global_state import global_state
+
+# The verdict reasons that mean the planner stopped at a time limit it enforced
+# itself (see SolverStatsExtractor.fd_verdict): a timeout, not a failure.
+_TIME_LIMIT_REASONS = frozenset({'search-limit', 'translate-limit'})
 
 
 class FastDownwardSolver(Solver):
@@ -81,7 +86,20 @@ class FastDownwardSolver(Solver):
                 self.logger.warning(f"Failed to remove existing solution file {existing}: {e}")
 
         self.logger.info("Running Fast Downward solver")
-        result = self.runner.run_phase("solving", cmd, expected_outputs=[str(expected_solution)])
+        # Fast Downward answers through its exit code: a proof that no plan
+        # exists is 11 (or 12), not 0, and must not be logged as a failure.
+        result = self.runner.run_phase("solving", cmd,
+                                       expected_outputs=[str(expected_solution)],
+                                       ok_returncodes=FD_ANSWER_RETURNCODES)
+
+        verdict: Dict[str, Any] = {}
+        if not result.launch_failed:
+            verdict = SolverStatsExtractor.fd_verdict(
+                result.returncode, result.stdout, cmd, timed_out=result.timed_out,
+                interrupted=result.interrupted, anytime=anytime)
+            solving_phase = self.runner.summary.get_phase("solving")
+            if solving_phase is not None:
+                solving_phase.solver_stats.update(verdict)
 
         if result.interrupted:
             self.logger.warning("Fast Downward solving was interrupted")
@@ -97,7 +115,7 @@ class FastDownwardSolver(Solver):
             if anytime:
                 # Anytime portfolio: check if any plans were banked before the
                 # budget ran out. None banked is a timeout like any other, not a
-                # failure - the same reading as the [34] branch below.
+                # failure.
                 solution_file = self._handle_anytime_solutions(result)
                 if solution_file is None:
                     raise TimeoutError(
@@ -108,34 +126,36 @@ class FastDownwardSolver(Solver):
                 # For regular PDDL, timeout with no solution is a timeout error
                 raise TimeoutError(f"Fast Downward solver timed out after {result.duration:.1f}s")
 
-        if result.success:
-            if anytime:
-                return self._handle_anytime_solutions(result)
-            else:
-                return self._handle_single_solution(expected_solution)
+        # A portfolio member that does not support the task (axioms, typically)
+        # exits 34 while the others carry on, and the driver reports 34 when
+        # that was the only unexpected code - so for a portfolio, 34 is an
+        # ordinary ending that may still have banked plans.
+        portfolio_bailout = verdict.get('verdict_reason') == 'portfolio'
+        if not (result.success or portfolio_bailout):
+            self.logger.error(f"Fast Downward solver failed: {result.stderr}")
+            return None
+
+        if anytime:
+            solution_file = self._handle_anytime_solutions(result)
         else:
-            # Anytime portfolio tolerance: exit code 34 is expected when some
-            # portfolio configurations don't support axioms (as in original run
-            # script). This tolerance is specific to the seq-sat-fdss portfolio,
-            # currently the only anytime fd tune.
-            if (anytime and ("Error: Unexpected exit codes: [34]" in result.stderr or
-                                "Error: Unexpected exit codes: [34]" in result.stdout)):
-                if global_state.verbose:
-                    self.logger.info("Anytime portfolio encountered expected exit code 34 (unsupported features), continuing with available solutions")
+            solution_file = self._handle_single_solution(expected_solution)
+        if solution_file is not None:
+            return solution_file
 
-                solution_file = self._handle_anytime_solutions(result)
-                if solution_file is None:
-                    # No solutions found in anytime mode - this typically happens when the
-                    # portfolio runs out of time (components get shorter time allocations)
-                    # Treat this as a timeout case, not a failure (same pattern as UPF solver)
-                    if global_state.verbose:
-                        self.logger.info("Anytime portfolio found no solutions within timeout - treating as timeout")
-                    raise TimeoutError(f"Anytime portfolio timed out after {result.duration:.1f}s with no solutions found")
-
-                return solution_file
-            else:
-                self.logger.error(f"Fast Downward solver failed: {result.stderr}")
-                return None
+        # No plan, and the verdict (already on the phase) says why. A planner
+        # that stopped at its own time limit is a timeout, exactly as if the
+        # watchdog had fired; so is a portfolio that ran out without a plan,
+        # its components having been given slices of the budget. Anything else
+        # - a proof, a bounded or incomplete search, a memory cap - returns None
+        # and the summary's outcome is derived from the verdict.
+        if verdict.get('verdict') == 'unknown' and (
+                anytime or verdict.get('verdict_reason') in _TIME_LIMIT_REASONS):
+            raise TimeoutError(
+                f"Fast Downward stopped at its own time limit after "
+                f"{result.duration:.1f}s with no plan "
+                f"({verdict.get('verdict_reason')})")
+        self.logger.info(f"Fast Downward found no plan: {verdict}")
+        return None
 
     def _handle_single_solution(self, expected_solution: Path) -> Optional[Path]:
         """Handle single PDDL solution (standard mode)."""

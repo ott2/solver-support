@@ -12,6 +12,7 @@ from solver_support.solver_upfplan import UpfPlanSolver
 from solver_support.solver_fd import FastDownwardSolver
 from solver_support.solver_enhsp import EnhspSolver
 from solver_support.solver_runner import SolverResult
+from solver_support.solver_stats import FD_ANSWER_RETURNCODES
 from solver_support.run_summary import PhaseResult
 from test_helpers import TempDirTestMixin
 
@@ -212,7 +213,7 @@ class TestFastDownwardSolver(TempDirTestMixin):
     def test_fd_solver_success(self):
         """Test successful Fast Downward solving."""
         # Mock run_phase to create sas_plan in current directory (temp dir)
-        def mock_run_phase(phase_name, cmd, expected_outputs=None):
+        def mock_run_phase(phase_name, cmd, expected_outputs=None, **kwargs):
             sas_plan = Path("sas_plan")
             sas_plan.write_text("solution content")
             return SolverResult(
@@ -291,10 +292,11 @@ class TestFastDownwardSolver(TempDirTestMixin):
         # Mock run_phase to fail
         self.mock_runner.run_phase.return_value = SolverResult(
             command=["fd", "domain.pddl", "problem.pddl"],
-            returncode=1,
+            returncode=31,  # TRANSLATE_INPUT_ERROR
             stdout="",
             stderr="Error: invalid domain",
-            duration=0.5
+            duration=0.5,
+            ok_returncodes=FD_ANSWER_RETURNCODES
         )
         
         # Run solver
@@ -328,10 +330,59 @@ class TestFastDownwardSolver(TempDirTestMixin):
             self.solver.solve(param_file=param_file, model_path="domain.pddl",
                               anytime=True)
 
+    def _solve_no_plan(self, returncode, stdout="", search="astar(blind())"):
+        """Run solve() over a planner exit that banked no plan, recording onto
+        a real solving phase so the verdict can be read back."""
+        phase = PhaseResult(name="solving")
+        self.mock_summary.get_phase.return_value = phase
+        cmd = ["fd", "domain.pddl", "problem.pddl", "--search", search]
+        self.mock_model_registry.build_fd_command.return_value = cmd
+        self.mock_runner.run_phase.return_value = SolverResult(
+            command=cmd, returncode=returncode, stdout=stdout, stderr="",
+            duration=1.0, ok_returncodes=FD_ANSWER_RETURNCODES)
+        param_file = self.temp_path / "problem.pddl"
+        param_file.write_text("problem content")
+        return phase, (lambda: self.solver.solve(
+            param_file=param_file, model_path="domain.pddl", anytime=False))
+
+    def test_fd_proof_is_recorded_not_logged_as_failure(self):
+        """An exhausted blind A* (exit 12) is an answer: None, with the verdict
+        on the phase and nothing at ERROR (issue #4)."""
+        phase, solve = self._solve_no_plan(
+            12, "Completely explored state space -- no solution!")
+        assert solve() is None
+        assert phase.solver_stats["verdict"] == "unsat"
+        assert phase.solver_stats["verdict_reason"] == "exhausted"
+        self.mock_runner.logger.error.assert_not_called()
+
+    def test_fd_run_phase_is_given_the_answer_codes(self):
+        _, solve = self._solve_no_plan(11)
+        solve()
+        kwargs = self.mock_runner.run_phase.call_args.kwargs
+        assert kwargs["ok_returncodes"] == FD_ANSWER_RETURNCODES
+
+    @pytest.mark.parametrize("returncode, stdout", [
+        (23, ""),                                           # --search-time-limit
+        (12, "Time limit reached. Abort search."),          # max_time=
+        (21, ""),                                           # translator's limit
+    ])
+    def test_fd_own_time_limit_is_a_timeout(self, returncode, stdout):
+        phase, solve = self._solve_no_plan(returncode, stdout)
+        with pytest.raises(TimeoutError):
+            solve()
+        assert phase.solver_stats["verdict"] == "unknown"
+
+    def test_fd_rejected_configuration_is_a_failure(self):
+        phase, solve = self._solve_no_plan(34, search="astar(lmcut())")
+        assert solve() is None
+        assert phase.solver_stats["verdict"] == "error"
+        assert phase.solver_stats["verdict_reason"] == "unsupported"
+        self.mock_runner.logger.error.assert_called()
+
     def test_fd_solver_interrupted(self):
         """Test Fast Downward solving interrupted."""
         # Mock run_phase to be interrupted but with partial solution
-        def mock_run_phase(phase_name, cmd, expected_outputs=None):
+        def mock_run_phase(phase_name, cmd, expected_outputs=None, **kwargs):
             sas_plan = Path("sas_plan")
             sas_plan.write_text("partial solution")
             return SolverResult(
@@ -369,7 +420,7 @@ class TestFastDownwardSolver(TempDirTestMixin):
     def test_fd_solver_anytime_mode(self):
         """Test Fast Downward solving in anytime portfolio mode."""
         # Mock run_phase to create multiple sas_plan files
-        def mock_run_phase(phase_name, cmd, expected_outputs=None):
+        def mock_run_phase(phase_name, cmd, expected_outputs=None, **kwargs):
             # Create multiple solution files
             Path("sas_plan.1").write_text("solution 1")
             Path("sas_plan.2").write_text("solution 2")
@@ -508,7 +559,7 @@ class TestEnhspSolver(TempDirTestMixin):
         """A written plan file is registered and returned."""
         expected_name = "test-instance-enhsp-defopt-pddlnoaxiom-20240101120000.1.solution"
 
-        def mock_run_phase(phase_name, cmd, expected_outputs=None):
+        def mock_run_phase(phase_name, cmd, expected_outputs=None, **kwargs):
             # ENHSP writes its plan straight to the -sp path (the final name).
             Path(expected_name).write_text("(matching_blocks )\n")
             return SolverResult(

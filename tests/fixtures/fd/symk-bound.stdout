@@ -1,0 +1,263 @@
+INFO     planner time limit: None
+INFO     planner memory limit: None
+
+INFO     Running translator.
+INFO     translator stdin: None
+INFO     translator time limit: None
+INFO     translator memory limit: None
+INFO     translator command line string: /opt/venv/bin/python3 -m translate ../dom.pddl ../sat.pddl --sas-file output.sas
+Parsing...
+Parsing: [0.000s CPU, 0.001s wall-clock]
+Normalizing task with strategy axiom_based... [0.000s CPU, 0.000s wall-clock]
+Instantiating...
+Generating Datalog program... [0.000s CPU, 0.000s wall-clock]
+Normalizing Datalog program...
+Trivial rules: Converted to facts.
+Normalizing Datalog program: [0.000s CPU, 0.000s wall-clock]
+Preparing model... [0.000s CPU, 0.000s wall-clock]
+Generated 5 rules.
+Computing model... [0.000s CPU, 0.000s wall-clock]
+7 relevant atoms
+0 auxiliary atoms
+7 final queue length
+7 total queue pushes
+Completing instantiation... [0.000s CPU, 0.000s wall-clock]
+Instantiating: [0.000s CPU, 0.000s wall-clock]
+Computing fact groups...
+Finding invariants...
+3 initial candidates
+Finding invariants: [0.000s CPU, 0.000s wall-clock]
+Checking invariant weight... [0.000s CPU, 0.000s wall-clock]
+Instantiating groups... [0.000s CPU, 0.000s wall-clock]
+Collecting mutex groups... [0.000s CPU, 0.000s wall-clock]
+Choosing groups...
+3 uncovered facts
+Choosing groups: [0.000s CPU, 0.000s wall-clock]
+Building translation key... [0.000s CPU, 0.000s wall-clock]
+Computing fact groups: [0.000s CPU, 0.000s wall-clock]
+Building STRIPS to SAS dictionary... [0.000s CPU, 0.000s wall-clock]
+Building dictionary for full mutex groups... [0.000s CPU, 0.000s wall-clock]
+Building mutex information...
+Building mutex information: [0.000s CPU, 0.000s wall-clock]
+Translating task...
+Processing axioms...
+Simplifying axioms... [0.000s CPU, 0.000s wall-clock]
+Translator axioms removed by simplifying: 0
+Processing axioms: [0.000s CPU, 0.000s wall-clock]
+Translating task: [0.000s CPU, 0.000s wall-clock]
+2 effect conditions simplified
+0 implied preconditions added
+Detecting unreachable propositions...
+0 operators removed
+0 axioms removed
+0 propositions removed
+Detecting unreachable propositions: [0.000s CPU, 0.000s wall-clock]
+Reordering and filtering variables...
+3 of 3 variables necessary.
+0 of 0 mutex groups necessary.
+3 of 3 operators necessary.
+0 of 0 axiom rules necessary.
+Reordering and filtering variables: [0.000s CPU, 0.000s wall-clock]
+Translator variables: 3
+Translator derived variables: 0
+Translator facts: 6
+Translator goal facts: 2
+Translator mutex groups: 0
+Translator total mutex groups size: 0
+Translator operators: 3
+Translator axioms: 0
+Translator task size: 20
+warning: could not determine peak memory
+Writing output... [0.000s CPU, 0.000s wall-clock]
+Done! [0.000s CPU, 0.002s wall-clock]
+Parsing...
+Parsing: [0.000s CPU, 0.000s wall-clock]
+Normalizing task with strategy axiom_based... [0.000s CPU, 0.000s wall-clock]
+Instantiating...
+Generating Datalog program... [0.000s CPU, 0.000s wall-clock]
+Normalizing Datalog program...
+Trivial rules: Converted to facts.
+Normalizing Datalog program: [0.000s CPU, 0.000s wall-clock]
+Preparing model... [0.000s CPU, 0.000s wall-clock]
+Generated 5 rules.
+Computing model... [0.000s CPU, 0.000s wall-clock]
+7 relevant atoms
+0 auxiliary atoms
+7 final queue length
+7 total queue pushes
+Completing instantiation... [0.000s CPU, 0.000s wall-clock]
+Instantiating: [0.000s CPU, 0.000s wall-clock]
+Computing fact groups...
+Finding invariants...
+3 initial candidates
+Finding invariants: [0.000s CPU, 0.000s wall-clock]
+Checking invariant weight... [0.000s CPU, 0.000s wall-clock]
+Instantiating groups... [0.000s CPU, 0.000s wall-clock]
+Collecting mutex groups... [0.000s CPU, 0.000s wall-clock]
+Choosing groups...
+3 uncovered facts
+Choosing groups: [0.000s CPU, 0.000s wall-clock]
+Building translation key... [0.000s CPU, 0.000s wall-clock]
+Computing fact groups: [0.000s CPU, 0.000s wall-clock]
+Building STRIPS to SAS dictionary... [0.000s CPU, 0.000s wall-clock]
+Building dictionary for full mutex groups... [0.000s CPU, 0.000s wall-clock]
+Building mutex information...
+Building mutex information: [0.000s CPU, 0.000s wall-clock]
+Translating task...
+Processing axioms...
+Simplifying axioms... [0.000s CPU, 0.000s wall-clock]
+Translator axioms removed by simplifying: 0
+Processing axioms: [0.000s CPU, 0.000s wall-clock]
+Translating task: [0.000s CPU, 0.000s wall-clock]
+4 effect conditions simplified
+0 implied preconditions added
+Detecting unreachable propositions...
+0 operators removed
+0 axioms removed
+0 propositions removed
+Detecting unreachable propositions: [0.000s CPU, 0.000s wall-clock]
+Reordering and filtering variables...
+3 of 3 variables necessary.
+0 of 0 mutex groups necessary.
+3 of 3 operators necessary.
+0 of 0 axiom rules necessary.
+Reordering and filtering variables: [0.000s CPU, 0.000s wall-clock]
+Translator variables: 3
+Translator derived variables: 0
+Translator facts: 6
+Translator goal facts: 2
+Translator mutex groups: 0
+Translator total mutex groups size: 0
+Translator operators: 3
+Translator axioms: 0
+Translator task size: 20
+warning: could not determine peak memory
+Writing output... [0.000s CPU, 0.000s wall-clock]
+Done! [0.000s CPU, 0.001s wall-clock]
+translate exit code: 0
+
+INFO     Running preprocessor (release).
+INFO     preprocess stdin: output.sas
+INFO     preprocess time limit: None
+INFO     preprocess memory limit: None
+INFO     preprocess command line string: /opt/symk/builds/release/bin/preprocess --sas-file output.sas < output.sas
+Building causal graph...
+The causal graph is acyclic.
+3 variables of 3 necessary
+0 of 0 mutex groups necessary.
+3 of 3 operators necessary.
+0 of 0 axiom rules necessary.
+Initializing mutex computation...
+Mutex computation initialized with 6 fluents.
+iteration for mutex detection and operator pruning
+Initialize m_index fw
+Initialized mvalues forward: reached=9, notReached=21, spurious=6
+Initialize m_ops fw
+Computing mutexes...
+Mutex computation finished with reached=28, notReached=2, spurious=6
+0 operators are spurious because were not triggered
+H^2 mutexes added fw: 2, unreachable: 0
+0 of 3 operators detected as spurious
+iteration for mutex detection and operator pruning
+Initialize m_index bw
+Init values regression
+Initialized mvalues backward: reached=9, notReached=19, spurious=8
+Initialize m_ops bw
+Computing mutexes...
+Mutex computation finished with reached=28, notReached=0, spurious=8
+0 operators are spurious because were not triggered
+H^2 mutexes added bw: 0, unreachable: 0
+0 of 3 operators detected as spurious
+Total mutex and disambiguation time: 5.5e-05 iterations: 2
+Total mutexes found forward: 2
+Total mutexes found backward: 0
+1 of 1 mutex groups necessary.
+3 of 3 operators necessary.
+0 of 0 axiom rules necessary.
+Change id of initial state
+Remove unreachable facts from variables: 3
+1 of 1 mutex groups necessary.
+3 of 3 operators necessary.
+0 of 0 axiom rules necessary.
+Updating causal graph and pruning unnecessary facts
+3 variables of 3 of 3 necessary
+The causal graph is acyclic.
+3 variables of 3 necessary
+1 of 1 mutex groups necessary.
+3 of 3 operators necessary.
+0 of 0 axiom rules necessary.
+Preprocessor variables: 3
+Preprocessor facts: 6
+Preprocessor derived variables: 0
+Preprocessor operators: 3
+Preprocessor mutex groups: 1
+Preprocessor task size: 22
+Writing output...
+done
+preprocess exit code: 0
+
+INFO     Running search (release).
+INFO     search stdin: output.sas
+INFO     search time limit: None
+INFO     search memory limit: None
+INFO     search command line string: /opt/symk/builds/release/bin/downward --search 'sym_bd(bound=2)' --internal-plan-file sas_plan < output.sas
+[t=0.000224s, 435304496 KB] Search code revision: 4e000d8a0
+[t=0.000235s, 435304496 KB] reading input...
+[t=0.000303s, 435304496 KB] done reading input!
+[t=0.001061s, 435308592 KB] Search Algorithm: Symbolic Bidirectional Uniform Cost Search
+[t=0.001069s, 435308592 KB] Building successor generator...done!
+[t=0.001081s, 435308592 KB] peak memory difference for successor generator creation: 0 KB
+[t=0.001085s, 435308592 KB] time for successor generation creation: 0.000003s
+[t=0.001089s, 435308592 KB] Variables: 3
+[t=0.001099s, 435308592 KB] FactPairs: 6
+[t=0.001102s, 435308592 KB] Bytes per state: 4
+[t=0.001105s, 435308592 KB] Has conditional effects: 0
+[t=0.001108s, 435308592 KB] Has axioms: 0
+
+[t=0.001117s, 435308592 KB] CUDD Init: nodes=16000000 cache=16000000 max_memory=0
+[t=0.001120s, 435308592 KB] Variable Ordering: gamer
+[t=0.001123s, 435308592 KB] Dynamic reordering: False
+
+[t=0.001127s, 435308592 KB] TR(time=60000, nodes=100000, ce_type=variable + effect based conjunctive with early quantification)
+[t=0.001130s, 435308592 KB] Mutex(time=60000, nodes=100000, type=edeletion)
+[t=0.001133s, 435308592 KB] Aux(time=2000, nodes=1000000)
+[t=0.001135s, 435308592 KB] Max alloted time (for bd): 60.000000s nodes: 10000000
+[t=0.001138s, 435308592 KB] Mult alloted time (for bd): 2.000000 nodes: 2.000000
+
+[t=0.001144s, 435308592 KB] building causal graph...done! [t=0.000005s]
+[t=0.001154s, 435308592 KB] Optimizing variable ordering...done! [t=0.029806s]
+[t=0.030985s, 435308592 KB] Sym variable order: 0 1 2 
+[t=0.030993s, 435308592 KB] Initializing Symbolic Variables
+[t=0.030999s, 435308592 KB] Num variables: 3 => 3
+[t=0.031003s, 435308592 KB] Initialize Symbolic Manager(6, 2666666, 16000000, 0)
+[t=0.065593s, 435804240 KB] Generating binary variables
+[t=0.065636s, 435804240 KB] Symbolic Variables... Done.
+
+[t=0.065661s, 435804240 KB] Plan Selector: Top-K
+[t=0.065666s, 435804240 KB] Plan files: sas_plan
+
+[t=0.065688s, 435804240 KB] Creating 3 transition relations...Done!
+[t=0.065746s, 435804240 KB] Number of auxillary variables: 0
+[t=0.065751s, 435804240 KB] Individual transition relations: 3
+[t=0.065757s, 435804240 KB] Individual disjunctive transition relations: 3
+[t=0.065761s, 435804240 KB] Individual conjunctive transition relations: 0
+[t=0.065764s, 435804240 KB] Merging transition relations...
+[t=0.065766s, 435804240 KB] Conjunctive merging...
+[t=0.065770s, 435804240 KB] Disjunctive merging...
+[t=0.065798s, 435804240 KB] Merged transition relations: 1
+[t=0.065802s, 435804240 KB] Merged disjunctive transition relations: 1
+[t=0.065805s, 435804240 KB] Merged conjunctive transition relations: 0
+[t=0.065813s, 435804240 KB] BOUND: 1 < 2 [0/1 plans], reconstruction time: 0.000000s
+[t=0.065839s, 435804240 KB] BOUND: 2 < 2 [0/1 plans], dir: FW, reconstruction time: 0.000000s
+[t=0.065849s, 435804240 KB] Actual search time: 0.000040s
+[t=0.065853s, 435804240 KB] Number of plans: 0
+[t=0.065853s, 435804240 KB] Plan reconstruction time: 0.000000s
+[t=0.065853s, 435804240 KB] Search time: 0.000192s
+[t=0.065853s, 435804240 KB] Total time: 0.065853s
+Search stopped without finding a solution.
+Peak memory: 435804240 KB
+Remove intermediate file output.sas
+search exit code: 12
+
+Driver aborting after search
+INFO     Planner time: 0.15s

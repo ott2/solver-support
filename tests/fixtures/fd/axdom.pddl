@@ -1,0 +1,5 @@
+(define (domain ax)
+  (:requirements :strips :derived-predicates)
+  (:predicates (a) (d))
+  (:derived (d) (a))
+  (:action set-a :parameters () :precondition () :effect (a)))

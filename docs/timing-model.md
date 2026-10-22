@@ -239,6 +239,62 @@ N+1. Only the registry knows which models decide the problem itself
   translate_time` (the search-relative kill time), so the blown-up deepest bound
   does not collapse to ~0.
 
+#### Verdicts: proof, limit, or rejection
+
+Fast Downward answers through its **exit code** (`driver/returncodes.py`), so
+`run_phase` is handed `FD_ANSWER_RETURNCODES` and a proof is not logged as a
+failed command. `SolverStatsExtractor.fd_verdict` reads the code, plus the log
+where the code is ambiguous, into the same vocabulary as the Savile Row verdict.
+`FastDownwardSolver` records it on the `solving` phase:
+
+| exit | verdict | `verdict_reason` |
+|---|---|---|
+| 0–3 (plan; 1–3 then hit a limit) | `sat` | |
+| 10, 11 | `unsat` | (the planner's own claim) |
+| 12, see below | `unsat` / `unknown` | `exhausted`, or `search-limit` / `bounded` / `portfolio` / `incomplete` |
+| 13 (26.6+) | `unknown` | `bounded` |
+| 20 / 21 | `unknown` | `translate-memory` / `translate-limit` |
+| 22, 24 / 23 | `unknown` | `memory` / `search-limit` |
+| 34, 37 | `error` | `unsupported` (`unknown`/`portfolio` for an anytime portfolio) |
+| 31, 33, 36 | `error` | `input-error` |
+| 30, 32, 35, a signal | `error` | `crash` |
+| killed by the runner | `killed` | |
+
+**Exit 12 is ambiguous by construction.** Before 26.6 the planner exits
+`found_solution() ? 0 : 12` however the search ended, so the log decides:
+
+- `Time limit reached. Abort search.` (the search's `max_time=`) gives
+  `search-limit`.
+- `Completely explored state space -- no solution!` gives `unsat`/`exhausted`,
+  or `bounded` if the `--search` string has a `bound=`. The log looks the same
+  either way, so the argv is read for it. The translator's
+  `Generating unsolvable task` lands here too, since the search then exhausts a
+  trivially false goal.
+- SymK prints no exhaustion line. Its last `BOUND: L < U` line, with `L ≥ U`, is
+  `exhausted` when `U` is infinity (`2147483647`) and `bounded` otherwise.
+- A portfolio's 12 is always `portfolio`. It can mask its components'
+  time-outs, and its exhaustion line may come from a component that pruned
+  unsafely.
+- Anything else is `incomplete`: EHC giving up, or a 26.6 search that the
+  planner itself judged incomplete (`Search terminated without finding a
+  plan!`).
+
+**`exhausted` is this library's reading, not the planner's.** It is sound only
+if the search is complete and prunes safely. A relaxation heuristic prunes
+infinite-valued states even on a task with axioms, where infinity is not a
+dead end, so `astar(ff())` there "exhausts" without proving anything. The log
+cannot reveal this. From 26.6 the planner checks it (upstream issue1201): a
+safe exhaustion exits 11 and an unsafe one exits 12 with no exhaustion line, so
+`exhausted` only ever comes from older planners and SymK. Whether it becomes a
+run-level `unsat` is decided by the registry's `proves-unsat`, which a tune
+preset can switch off.
+
+**The planner's own time limit is a timeout.** `search-limit` and
+`translate-limit` make `solve()` raise `TimeoutError`, exactly as a watchdog
+kill does, and so does an anytime portfolio that ends without a plan. Every other
+no-plan ending returns `None`, and the run's `outcome` is derived from the
+verdict.
+
 ### UPF (via the consumer's UPF CLI; PDDL or constructed models)
 
 - **Shape**: the UPF CLI runs a UPF engine (Fast Downward / SymK / ENHSP) and
@@ -325,6 +381,7 @@ proved. A status that stopped early (`timeout`, `hlim`, `stopped`) is never
 |---------|----------|
 | per-solver stat parsers, cost-layer assembly, dispatch | `solver_stats.py` |
 | per-run Savile Row verdict (refuted vs gave up) | `solver_stats.py` (`savilerow_verdict`) |
+| per-run Fast Downward / SymK verdict (exit code + log) | `solver_stats.py` (`fd_verdict`) |
 | Savile Row `.info` split recording (per horizon) | `solver_horizon.py` (`_record_savilerow_times`) |
 | stats attached to a phase after each solve | `solver_runner.py`, `solver_horizon.py` |
 | the phase model (`RunSummary` / `PhaseResult`), outcome and success | `run_summary.py` |

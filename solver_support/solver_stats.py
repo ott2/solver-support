@@ -128,6 +128,61 @@ _SAVILEROW_ABORT_FLAGS = (
 )
 
 
+# What a single Fast Downward (or SymK) run concluded, in the same vocabulary as
+# SAVILEROW_VERDICTS so a consumer handles one set of words. The planner reports
+# through its exit code (driver/returncodes.py), and every code but one says
+# exactly what happened: exit code -> (verdict, verdict_reason).
+#
+# 11 is the planner's OWN proof. Before 26.6 almost nothing emitted it (EHC on a
+# dead initial state, PDB CEGAR); from 26.6 on it is how every search that
+# exhausted a complete, safely-pruned space reports, the planner having checked
+# its open list and pruning for safety itself (issue1201). 13 is new in 26.6:
+# no plan within the cost bound, which says nothing about plans above it.
+_FD_EXIT_VERDICTS = {
+    0: ('sat', None),
+    1: ('sat', None),                       # plan found, then out of memory
+    2: ('sat', None),                       # plan found, then out of time
+    3: ('sat', None),                       # plan found, then both
+    10: ('unsat', None),                    # TRANSLATE_UNSOLVABLE
+    11: ('unsat', None),                    # SEARCH_UNSOLVABLE
+    13: ('unknown', 'bounded'),             # SEARCH_UNSOLVABLE_WITHIN_BOUND
+    20: ('unknown', 'translate-memory'),
+    21: ('unknown', 'translate-limit'),
+    22: ('unknown', 'memory'),
+    23: ('unknown', 'search-limit'),        # --search-time-limit (a CPU rlimit)
+    24: ('unknown', 'memory'),              # out of memory AND time (portfolios)
+    30: ('error', 'crash'),                 # TRANSLATE_CRITICAL_ERROR
+    31: ('error', 'input-error'),
+    32: ('error', 'crash'),                 # SEARCH_CRITICAL_ERROR
+    33: ('error', 'input-error'),
+    34: ('error', 'unsupported'),           # e.g. lmcut on a task with axioms
+    35: ('error', 'crash'),                 # DRIVER_CRITICAL_ERROR
+    36: ('error', 'input-error'),
+    37: ('error', 'unsupported'),
+}
+
+#: The exit codes with which Fast Downward ran and *answered*: a plan, a claim
+#: about solvability, or a resource limit it enforced itself. Pass as
+#: ``ok_returncodes`` so a proof is not logged as a failed command. 30-39 are
+#: what the driver itself calls unrecoverable, and stay failures.
+FD_ANSWER_RETURNCODES = frozenset(
+    code for code, (verdict, _) in _FD_EXIT_VERDICTS.items() if verdict != 'error'
+) | {12}
+
+# Exit 12, SEARCH_UNSOLVED_INCOMPLETE, is the one ambiguous code: before 26.6 the
+# planner exits `found_solution() ? 0 : 12` however the search ended, so only the
+# log says which ending it was. These are the lines, verbatim.
+_FD_TIME_LIMIT_LINE = 'Time limit reached. Abort search.'       # max_time=, all versions
+_FD_EXHAUSTED_LINE = 'Completely explored state space -- no solution!'   # before 26.6
+# SymK prints no exhaustion line. Its bound sweep ends when the lower bound
+# meets the upper, and when no `bound=` was given the upper bound is "infinity",
+# INT_MAX: a final `BOUND: 2147483647 < 2147483647` is a search that ran out of
+# states, while a finite one (`BOUND: 2 < 2`) is a search that ran out of bound.
+_SYMK_BOUND_RE = re.compile(r'BOUND: (\d+) < (\d+)')
+_SYMK_INFINITY = 2147483647
+_FD_BOUND_ARG_RE = re.compile(r'\bbound\s*=')
+
+
 class SolverStatsExtractor:
     """Extract structured statistics from solver output."""
 
@@ -550,6 +605,87 @@ class SolverStatsExtractor:
             if _flagged(key):
                 return {'verdict': 'unknown', 'verdict_reason': reason}
         return {'verdict': 'unknown', 'verdict_reason': 'unexplained'}
+
+    @staticmethod
+    def fd_verdict(returncode: int, stdout: str, command: Optional[List[str]] = None,
+                   timed_out: bool = False, interrupted: bool = False,
+                   anytime: bool = False) -> Dict[str, Any]:
+        """What a Fast Downward or SymK run concluded, from its exit code and log.
+
+        Returns ``{'verdict': ...}`` in the :data:`SAVILEROW_VERDICTS`
+        vocabulary, plus ``verdict_reason`` where there is one to give. The
+        Savile Row twin of this is :meth:`savilerow_verdict`, and it exists for
+        the same reason: "no plan" is several different claims - a proof, a
+        search that hit its own limit, a configuration the planner rejected -
+        and the run's bare ``failed`` cannot tell them apart.
+
+        ``unsat`` is about *the configured search*, not the task. With reason
+        ``exhausted`` it is this function's own reading of a pre-26.6 planner
+        whose search ran out of states - sound only if that search is complete
+        and prunes safely, which the log cannot reveal (``astar(ff())`` on a
+        task with axioms prunes states it should not). Without a reason it is
+        the planner's own claim. Either way, turning it into a run-level outcome
+        is the caller's job, through the registry's ``get_proves_unsat``.
+
+        Args:
+            returncode: The planner driver's exit code.
+            stdout: Its stdout, where the search logs.
+            command: The argv that ran, read for a ``bound=`` in ``--search``
+                (a pre-26.6 bounded search logs exactly as an unbounded one).
+            timed_out / interrupted: the runner killed it, so the planner's own
+                account of how the search ended was never written.
+            anytime: it was a portfolio (``--alias``), whose 12 can mask its
+                components' time-outs and whose exhaustion line may come from a
+                component that pruned unsafely.
+        """
+        if timed_out or interrupted:
+            return {'verdict': 'killed'}
+        if returncode == 12:
+            verdict, reason = SolverStatsExtractor._fd_unsolved_verdict(
+                stdout or '', command or [], anytime)
+        elif returncode == 34 and anytime:
+            # A portfolio member that does not support the task (e.g. axioms)
+            # bails out with 34 while the others carry on; the driver reports
+            # 34 when it was the only unexpected code. Expected, not a fault.
+            verdict, reason = 'unknown', 'portfolio'
+        elif returncode in _FD_EXIT_VERDICTS:
+            verdict, reason = _FD_EXIT_VERDICTS[returncode]
+        elif returncode < 0:
+            verdict, reason = 'error', 'crash'      # killed by a signal
+        else:
+            verdict, reason = 'error', 'unexplained'
+        stats: Dict[str, Any] = {'verdict': verdict}
+        if reason:
+            stats['verdict_reason'] = reason
+        return stats
+
+    @staticmethod
+    def _fd_unsolved_verdict(stdout: str, command: List[str],
+                             anytime: bool):
+        """Read an exit 12 off the log: (verdict, verdict_reason)."""
+        if anytime:
+            return 'unknown', 'portfolio'
+        if _FD_TIME_LIMIT_LINE in stdout:
+            return 'unknown', 'search-limit'
+        search = ''
+        if '--search' in command:
+            i = command.index('--search')
+            search = command[i + 1] if i + 1 < len(command) else ''
+        bounded = bool(_FD_BOUND_ARG_RE.search(search))
+        if _FD_EXHAUSTED_LINE in stdout:
+            return ('unknown', 'bounded') if bounded else ('unsat', 'exhausted')
+        bounds = _SYMK_BOUND_RE.findall(stdout)
+        if bounds:
+            lower, upper = (int(b) for b in bounds[-1])
+            if lower >= upper:
+                if upper >= _SYMK_INFINITY:
+                    return 'unsat', 'exhausted'
+                return 'unknown', 'bounded'
+        # Neither line: an incomplete search gave up (EHC prints `No solution -
+        # FAILED`), or - from 26.6, where a complete search exits 11 or 13 - a
+        # search the planner itself judged incomplete or unsafely pruned
+        # (`Search terminated without finding a plan!`).
+        return 'unknown', 'incomplete'
 
     @staticmethod
     def extract_fast_downward_stats(stdout: str, stderr: str,
