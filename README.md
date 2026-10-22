@@ -9,6 +9,24 @@ subprocesses with timeouts and clean teardown, naming the per-run files, parsing
 solver output into a uniform timing / cost-layer model, and driving the horizon
 (increasing-difficulty) loop.
 
+Its main value is a **unified semantics for solver behaviour**. Each solver
+reports how a run ended in its own way, and the raw signals are misleading
+taken at face value:
+
+- Fast Downward's exit 12 can mean a proof, a time limit or a search that gave up.
+- ENHSP exits 0 after a proof and after failing to read its input alike.
+- Savile Row prints the same "no solution" whether the backend refuted the
+  instance or stopped at its own limit.
+- A SAT solver's 10 and 20 are answers, not failures.
+
+solver-support reads each solver's exit codes, logs and info files. It reports
+every run in one vocabulary: a `verdict` (`sat` / `unsat` / `unknown` / `error` /
+`killed`, with a reason) for each solve, and an `outcome` and `stop_reason` for
+the run. So `unsat` means a proof, whichever solver produced it. A run that
+merely found nothing, or crashed, never reads as one. The rules for each solver
+are checked against its source and its real output, and are documented in
+[`timing-model.md`](https://github.com/ott2/solver-support/blob/main/docs/timing-model.md).
+
 It carries **no** notion of any particular problem domain or objective. A
 consumer supplies:
 
