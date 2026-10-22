@@ -20,8 +20,10 @@ consumer supplies:
 
 ## Status
 
-**Alpha.** The pipeline is in day-to-day use by several consumers and is covered
-by its own test suite, but the API may still shift between 0.x releases. Each
+**Beta.** The pipeline is in day-to-day use by several consumers and is covered
+by its own test suite. The injection seams and the run-summary vocabulary
+(`outcome`, `stop_reason`, `verdict`) are stable: later releases add to them
+rather than rename them. Other API may still shift between 0.x releases. Each
 release's changes are listed on the
 [releases page](https://github.com/ott2/solver-support/releases).
 
