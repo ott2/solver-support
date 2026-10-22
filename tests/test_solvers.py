@@ -372,6 +372,22 @@ class TestFastDownwardSolver(TempDirTestMixin):
             solve()
         assert phase.solver_stats["verdict"] == "unknown"
 
+    def test_fd_watchdog_sizes_only_the_kill(self):
+        """`watchdog=` moves the runner's kill above the in-band search limit;
+        the limit itself stays the runner's timeout."""
+        self.mock_runner.timeout = 60
+        _, solve = self._solve_no_plan(11)
+        param_file = self.temp_path / "problem.pddl"
+        self.solver.solve(param_file=param_file, model_path="domain.pddl",
+                          watchdog=125)
+        assert self.mock_runner.run_phase.call_args.kwargs["timeout"] == 125
+        assert self.mock_model_registry.build_fd_command.call_args.kwargs["timeout"] == 60
+
+    def test_fd_without_watchdog_keeps_the_runner_timeout(self):
+        _, solve = self._solve_no_plan(11)
+        solve()
+        assert self.mock_runner.run_phase.call_args.kwargs["timeout"] is None
+
     def test_fd_rejected_configuration_is_a_failure(self):
         phase, solve = self._solve_no_plan(34, search="astar(lmcut())")
         assert solve() is None

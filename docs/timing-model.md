@@ -243,8 +243,10 @@ N+1. Only the registry knows which models decide the problem itself
   translation plus search. A watchdog at `T` therefore always fires first, and
   the run loses the exit 23 and the final statistics block it would have
   written. Size the watchdog with `fd_backstop(T, translate_allowance)`, which
-  is `T`, plus translation, plus `FD_EXIT_GRACE`. Then an external kill once
-  again means the planner ignored its limit. As with Savile Row, this is a
+  is `T`, plus translation, plus `FD_EXIT_GRACE`, and pass it as
+  `FastDownwardSolver.solve(..., watchdog=...)`. The runner's own timeout stays
+  the in-band limit. Then an external kill once again means the planner ignored
+  its limit. As with Savile Row, this is a
   backstop and not a budget: to hold a run to a wall-clock `T`, shrink the search
   limit.
 

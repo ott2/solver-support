@@ -36,6 +36,11 @@ class FastDownwardSolver(Solver):
                   The runner decides this via registry.is_anytime_tune (the
                   active tune's regime), not the model name.
                 - instance_file: Original problem instance file
+                - watchdog: seconds of wall clock before the runner kills the
+                  planner, if not the runner's own timeout. The runner's timeout
+                  is also the in-band ``--search-time-limit``, and a kill at the
+                  same number always fires first; pass ``fd_backstop(timeout)``
+                  to let the planner stop itself and report.
 
         Returns:
             Path to solution file if successful, None otherwise
@@ -47,6 +52,7 @@ class FastDownwardSolver(Solver):
 
         anytime = kwargs.get('anytime', False)
         instance_file = kwargs.get('instance_file')
+        watchdog = kwargs.get('watchdog')
 
         # The resolved solver name selects the fd-type config. SymK is a Fast
         # Downward fork, so it flows through this same solver; its config just
@@ -90,7 +96,8 @@ class FastDownwardSolver(Solver):
         # exists is 11 (or 12), not 0, and must not be logged as a failure.
         result = self.runner.run_phase("solving", cmd,
                                        expected_outputs=[str(expected_solution)],
-                                       ok_returncodes=FD_ANSWER_RETURNCODES)
+                                       ok_returncodes=FD_ANSWER_RETURNCODES,
+                                       timeout=watchdog)
 
         verdict: Dict[str, Any] = {}
         if not result.launch_failed:
