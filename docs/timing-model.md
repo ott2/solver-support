@@ -439,6 +439,10 @@ its meaning; these sit alongside it.
 |---|---|
 | `outcome` | `solved` / `unsat` / `unknown` / `error` |
 | `stop_reason` | `complete` / `time` / `horizons` / `interrupt` / `error` |
+| `outcome_reason` | `setup` / `launch` / `no-verdict` / the solving phase's `verdict_reason`, or empty |
+
+`stop_reason` is `error`, not `complete`, whenever a completed status ends in
+`error`: a crash, or a run that never handed its solver the input.
 
 `success` is `outcome in {solved, unsat}`: **a run succeeded if it produced a
 definitive answer in the budget it was given.** A proof that no solution exists
@@ -472,7 +476,6 @@ every crash of a complete model to `unsat`. Where the `solving` phase recorded a
 | `unsat` | False | `unknown`: the search ran out, but cannot prove |
 | `unknown` / `killed` | either | `unknown` |
 | `error` | either | `error` |
-
 | none | True | `unknown`: it may have been a proof, or a crash |
 | none | False | `error` |
 
@@ -483,6 +486,16 @@ any consumer that drives a solver itself. To let such a run conclude `unsat`,
 record a verdict on its `solving` phase (`phase.solver_stats['verdict']`).
 Per-horizon verdicts
 (`solving-horizon-N`) are about one bound each and never decide the run.
+
+**A failed setup phase is an error, before any verdict is read.** When a phase
+that prepares the solver's input fails other than by the timeout, no search
+ran. These phases are the consumer's `translation`, Conjure's `modelling`, and
+`translate-param-N`. A completed run with such a failure is `error` with
+`stop_reason` `error`, whatever `proves_unsat` says. Its `outcome_reason` is
+`setup`, or `launch` if the phase's binary could not be started. A
+`translate-param-N` that fails mid-scan counts too: the scan ended on a
+failure, not on a limit. Phases are classified by name, so the rule also
+applies when an older saved summary is re-finalized.
 
 ## what the core owns
 

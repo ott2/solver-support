@@ -99,6 +99,24 @@ class PhaseResult:
 # it. (This is a known summary-generation imperfection.)
 _NON_SOLVING_PHASES = frozenset({"translation", "modelling", "visualisation"})
 
+# Phases that prepare the input for a solver: a consumer's own translation of
+# the instance, Conjure's modelling, and Conjure's per-horizon parameter
+# translation. When one of these fails, the solver never saw the input, so
+# the run ended on an error and not on a search. Classified by name, as the
+# phases above are, so the rule also applies when a saved summary is
+# re-finalized.
+_SETUP_PHASES = frozenset({"translation", "modelling"})
+_SETUP_PHASE_PREFIXES = ("translate-param-",)
+
+
+def _is_setup_phase(name: str) -> bool:
+    return name in _SETUP_PHASES or name.startswith(_SETUP_PHASE_PREFIXES)
+
+
+def _is_solving_phase(name: str) -> bool:
+    """May this phase report a solution? (See _NON_SOLVING_PHASES.)"""
+    return name not in _NON_SOLVING_PHASES and not _is_setup_phase(name)
+
 # Best-effort post-processing phases. The runner runs these after a solution is
 # already in hand and explicitly treats their failure as non-fatal, so their
 # success must NOT decide the overall run success. (Without this, a broken
@@ -185,6 +203,11 @@ class RunSummary:
     # written before these existed.
     outcome: str = ""                       # solved / unsat / unknown / error
     stop_reason: str = ""                   # complete / time / horizons / interrupt / error
+    # Why the outcome is what it is, where the summary can tell: `setup` (a
+    # phase preparing the solver's input failed), `launch` (a binary could not
+    # be started), `no-verdict`, or the solving phase's own `verdict_reason`
+    # (`exhausted`, `memory`, `crash`, ...). Empty when there is nothing to add.
+    outcome_reason: str = ""
     # Whether this run's model AND search can prove unsatisfiability (the
     # registry's get_proves_unsat), as last given to finalize(). Kept so that a
     # later re-finalize - after appending a phase, say - cannot drop it.
@@ -207,7 +230,7 @@ class RunSummary:
         self.total_duration += phase.duration
 
         # Update solution found status (solving phases only: see _NON_SOLVING_PHASES)
-        if (phase.name not in _NON_SOLVING_PHASES
+        if (_is_solving_phase(phase.name)
                 and phase.solver_stats.get('solution_found', False)):
             self.solution_found = True
 
@@ -231,19 +254,29 @@ class RunSummary:
         self.success = all(p.success for p in self.required_phases)
 
     def _derive_outcome(self, final_status: str, proves_unsat: bool,
-                        has_timeout_solution: bool) -> str:
-        """What this run learned: solved / unsat / unknown / error."""
+                        has_timeout_solution: bool) -> Tuple[str, str]:
+        """What this run learned, and why: (outcome, outcome_reason)."""
         # A solution in hand wins over any status label: a run that solved the
         # instance and was then interrupted, or that banked an anytime solution
         # before its budget expired, still solved it.
         if self.solution_found or has_timeout_solution:
-            return 'solved'
+            return 'solved', ''
 
         if final_status == "launch-failed":
-            return 'error'
+            return 'error', 'launch'
 
         if final_status in _COMPLETED_STATUSES:
-            verdict = self._solving_verdict()
+            # A phase preparing the input failed, so no search ran and there is
+            # nothing for proves_unsat or a verdict to say. Also when it fails
+            # mid-scan (Conjure's translate-param-5 after horizons 1-4): the scan
+            # ended on a failure, not on a limit. A phase killed by the timeout
+            # is a limit, and is left to the rules below.
+            failed = self._failed_setup_phase()
+            if failed is not None:
+                return 'error', 'launch' if failed.launch_failed else 'setup'
+
+            stats = self._solving_stats()
+            verdict = stats.get('verdict')
             if verdict is None:
                 # No account of how the search ended, so the status is all
                 # there is, and it cannot prove anything: `failed` is equally
@@ -252,31 +285,39 @@ class RunSummary:
                 # answer is unknown. From any other model, finishing unsolved
                 # means something went wrong. To conclude unsat, the solving
                 # phase must record a verdict.
-                return 'unknown' if proves_unsat else 'error'
+                return ('unknown' if proves_unsat else 'error'), 'no-verdict'
             # The solver said how its search ended. Only a refutation from a
             # search that can prove one is a proof; an exhausted search that
             # cannot (an unsafe heuristic, a tune switched off) concluded
             # nothing, but nothing went wrong either.
+            reason = stats.get('verdict_reason') or ''
             if verdict == 'unsat':
-                return 'unsat' if proves_unsat else 'unknown'
-            return _OUTCOME_BY_VERDICT.get(verdict, 'error')
+                return ('unsat' if proves_unsat else 'unknown'), reason
+            return _OUTCOME_BY_VERDICT.get(verdict, 'error'), reason
 
         # 'timeout', 'hlim', 'stopped', or a label this core does not know: the
         # search stopped early. Nothing was decided, and no completeness of the
         # model can change that -- refuting horizons 1..N says nothing about
         # N+1, which is exactly why 'hlim' must never become 'unsat'.
-        return 'unknown'
+        return 'unknown', ''
 
-    def _solving_verdict(self) -> Optional[str]:
-        """The ``verdict`` the ``solving`` phase recorded, if it recorded one.
+    def _failed_setup_phase(self) -> Optional[PhaseResult]:
+        """The first setup phase (see _SETUP_PHASES) that failed other than by
+        the timeout, if any."""
+        for phase in self.phases:
+            if (_is_setup_phase(phase.name) and not phase.success
+                    and not phase.timed_out):
+                return phase
+        return None
+
+    def _solving_stats(self) -> Dict[str, Any]:
+        """The ``solving`` phase's stats, where its ``verdict`` would be.
 
         Only the single-phase solvers' ``solving`` phase: a horizon scan's
         per-horizon verdicts are about one bound each, and never decide the run.
         """
         phase = self.get_phase("solving")
-        if phase is None:
-            return None
-        return phase.solver_stats.get('verdict')
+        return phase.solver_stats if phase is not None else {}
 
     def finalize(self, final_status: str = "done",
                  proves_unsat: Optional[bool] = None) -> None:
@@ -306,9 +347,13 @@ class RunSummary:
             for phase in self.phases
         )
 
-        self.outcome = self._derive_outcome(
+        self.outcome, self.outcome_reason = self._derive_outcome(
             final_status, proves_unsat, has_timeout_solution)
         self.stop_reason = _STOP_REASONS_BY_STATUS.get(final_status, "")
+        # A completed status that ended in error did not complete anything: a
+        # crash, or a phase that never handed the solver its input.
+        if self.stop_reason == "complete" and self.outcome == 'error':
+            self.stop_reason = "error"
         # Decided on the answer, not on exit codes. The previous rule -- "no
         # declared failure status AND every required phase exited 0" -- called a
         # run successful whenever its subprocesses were tidy, so a horizon scan

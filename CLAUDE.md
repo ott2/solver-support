@@ -184,9 +184,13 @@ because `failed` is also what a crash looks like: **no verdict, no `unsat`**
 0 after a missing input file) record one; UPF does not, its CLI being the
 consumer's.
 `proves_unsat` is kept on the summary so a re-finalize cannot drop it.
+Before any verdict, a failed **setup** phase (`translation`, `modelling`,
+`translate-param-N`, classified by name in `_is_setup_phase`) makes a completed
+run `error` with `stop_reason` `error`: no search ran. `outcome_reason` says why
+(`setup` / `launch` / `no-verdict` / the lifted `verdict_reason`).
 Best-effort phases (`visualisation`, `export`) are excluded from the success
-decision, and non-solving phases (`translation`, `modelling`, `visualisation`)
-may not set `solution_found`.
+decision, and non-solving phases (`translation`, `modelling`, `translate-param-N`,
+`visualisation`) may not set `solution_found`.
 
 **Savile Row's "no solution" is two different claims.** It prints the same text
 whether the solver refuted the instance or stopped at its own limit, and

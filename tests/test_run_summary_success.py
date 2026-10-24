@@ -249,3 +249,85 @@ def test_horizon_limit_is_not_unsat_even_for_a_complete_model():
     s.finalize("hlim", proves_unsat=True)
     assert s.outcome == "unknown"
     assert s.success is False
+
+
+# --- a run that failed before its solver started (issue #7) -------------------
+
+@pytest.mark.parametrize("setup", ["translation", "modelling", "translate-param-1"])
+@pytest.mark.parametrize("proves", [True, False])
+def test_failed_setup_phase_is_an_error(setup, proves):
+    """No search ran, so neither proves_unsat nor a completed stop applies."""
+    s = _summary(PhaseResult(name=setup, returncode=2))
+    s.finalize("failed", proves_unsat=proves)
+    assert (s.outcome, s.stop_reason, s.outcome_reason) == ("error", "error", "setup")
+    assert s.success is False
+
+
+def test_issue_7_reproduction():
+    s = RunSummary(instance='i', model='pddl', solver='fd')
+    s.add_phase(PhaseResult(name='translation', returncode=2, command=['prob2any']))
+    s.finalize('failed', proves_unsat=True)
+    assert (s.outcome, s.stop_reason) == ('error', 'error')
+
+
+def test_a_setup_failure_mid_scan_is_an_error():
+    """The scan ended on a failure, not on a limit."""
+    s = _summary(_phase("modelling", True), _phase("translate-param-1", True),
+                 *[_phase(f"solving-horizon-{n}", True, verdict="unsat")
+                   for n in range(1, 5)],
+                 PhaseResult(name="translate-param-5", returncode=1))
+    s.finalize("failed", proves_unsat=False)
+    assert (s.outcome, s.stop_reason, s.outcome_reason) == ("error", "error", "setup")
+
+
+def test_a_setup_phase_that_could_not_launch():
+    s = _summary(PhaseResult(name="translation", launch_failed=True))
+    s.finalize("failed", proves_unsat=True)
+    assert (s.outcome, s.outcome_reason) == ("error", "launch")
+
+
+def test_a_setup_phase_killed_by_the_timeout_is_a_limit():
+    s = _summary(PhaseResult(name="translation", timed_out=True, returncode=-15))
+    s.finalize("timeout", proves_unsat=True)
+    assert (s.outcome, s.stop_reason) == ("unknown", "time")
+
+
+def test_a_proof_after_a_successful_translation_is_unchanged():
+    s = _summary(_phase("translation", True),
+                 _phase("solving", False, verdict="unsat", verdict_reason="exhausted"))
+    s.finalize("failed", proves_unsat=True)
+    assert (s.outcome, s.stop_reason, s.outcome_reason) == (
+        "unsat", "complete", "exhausted")
+
+
+def test_translate_param_cannot_report_a_solution():
+    s = _summary(_phase("translate-param-1", True, solution_found=True))
+    assert s.solution_found is False
+
+
+@pytest.mark.parametrize("verdict, proves, expected", [
+    ({"verdict": "error", "verdict_reason": "crash"}, True,
+     ("error", "error", "crash")),
+    ({"verdict": "unknown", "verdict_reason": "memory"}, True,
+     ("unknown", "complete", "memory")),
+    ({}, True, ("unknown", "complete", "no-verdict")),
+    ({}, False, ("error", "error", "no-verdict")),
+])
+def test_outcome_reason_and_stop_reason(verdict, proves, expected):
+    s = _summary(_phase("solving", False, **verdict))
+    s.finalize("failed", proves_unsat=proves)
+    assert (s.outcome, s.stop_reason, s.outcome_reason) == expected
+
+
+def test_launch_failed_status_names_its_reason():
+    s = _summary()
+    s.finalize("launch-failed")
+    assert (s.outcome, s.stop_reason, s.outcome_reason) == ("error", "error", "launch")
+
+
+def test_outcome_reason_survives_a_round_trip():
+    s = _summary(PhaseResult(name="translation", returncode=2))
+    s.finalize("failed")
+    loaded = RunSummary.from_json(s.to_json())
+    assert loaded.outcome_reason == "setup"
+    assert "outcome_reason" not in loaded.extra
