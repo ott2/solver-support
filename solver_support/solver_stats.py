@@ -99,6 +99,14 @@ _ENHSP_OOM = 'java.lang.OutOfMemoryError'
 # `-planner` presets that prune with helpful actions (ENHSP.setPlanner); with no
 # preset, `-ha true` / `-ht true` do the same. A preset overrides those flags.
 _ENHSP_HELPFUL_PLANNERS = frozenset({'sat-hmrph', 'sat-hmrphj'})
+# As for Fast Downward, `Problem unsolvable` is read as a proof only for a search
+# checked to drop nothing but duplicates: the blind heuristic (h = 0, so never a
+# dead end, whatever -wh) under the WAStar class, which ENHSP builds for both
+# `-s wastar` and `-s gbfs`, with AIBR preprocessing off. That preprocessing
+# replaces the action set with the actions its interval relaxation reaches; its
+# soundness is a published claim that this implementation has not been checked
+# against. See docs/unsat-soundness.md.
+_ENHSP_VERIFIED_SEARCHES = frozenset({'wastar', 'gbfs'})
 
 
 # What a single Savile Row run concluded, derived from its ``.info`` file. The
@@ -872,6 +880,17 @@ class SolverStatsExtractor:
             helpful = value('-ha') == 'true' or value('-ht') == 'true'
         if helpful:
             return 'unknown', 'incomplete'
+        # The configuration ENHSP.java resolves: a -planner preset overrides -h
+        # and -s, the defaults are hadd and gbfs, and only opt-blind (or -dap)
+        # switches AIBR preprocessing off.
+        if planner is not None:
+            verified = planner == 'opt-blind'
+        else:
+            verified = ((value('-h') or 'hadd') == 'blind'
+                        and (value('-s') or 'gbfs').lower() in _ENHSP_VERIFIED_SEARCHES
+                        and '-dap' in argv)
+        if not verified:
+            return 'unknown', 'unverified-search'
         return 'unsat', 'exhausted'
 
     @staticmethod

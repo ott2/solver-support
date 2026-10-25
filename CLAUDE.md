@@ -180,10 +180,12 @@ complete the model, since refuting horizons 1..N says nothing about N+1.
 `unsat` also needs the `solving` phase to have recorded an `unsat` `verdict`,
 because `failed` is also what a crash looks like: **no verdict, no `unsat`**
 (with `proves_unsat`, a verdict-less `failed` is `unknown`). FD/SymK
-(`fd_verdict`, whose `exhausted` is an **allowlist** — only `astar`+`blind`
-calls in the logged search; anything else is `unverified-search`) and ENHSP
-(`enhsp_verdict`, which must read stderr — ENHSP exits 0 after a missing input
-file) record one. UPF records one only when the consumer's CLI writes the opt-in
+(`fd_verdict`) and ENHSP (`enhsp_verdict`, which must read stderr — ENHSP exits
+0 after a missing input file) record one. Their `exhausted` is an
+**allowlist** of checked blind searches (FD: only `astar`/`blind` calls in the
+logged search; ENHSP: `blind` under `wastar`/`gbfs` with AIBR preprocessing
+off); anything else is `unverified-search`. Widen it only with the evidence
+recorded in `docs/unsat-soundness.md`. UPF records one only when the consumer's CLI writes the opt-in
 result file (`result_file=True`, `upf_result_stats`); the file reports facts
 (the engine, its argv, times) and the core judges from the engine's log. UPF's
 own status is never trusted.
@@ -262,3 +264,5 @@ make it pass by adding a default rather than by injection are going the wrong wa
   `run_simple`.
 - `docs/timing-model.md` — the phase model, per-solver stat reference, and the
   invariants parsers rely on. Read before changing a parser or adding a solver.
+- `docs/unsat-soundness.md` — why an exhausted search counts as a proof only on
+  the allowlists, and the source/bytecode evidence for each entry.

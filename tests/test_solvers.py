@@ -610,7 +610,9 @@ class TestEnhspSolver(TempDirTestMixin):
         assert result is None
 
     @pytest.mark.parametrize("fixture, expected, logged_as", [
-        ("enhsp-exhaust", {"verdict": "unsat", "verdict_reason": "exhausted"},
+        # the mocked command runs sat-hmrp: greedy hmrp, whose exhaustion is
+        # not a verified proof
+        ("enhsp-exhaust", {"verdict": "unknown", "verdict_reason": "unverified-search"},
          "info"),
         # issue #6: exit 0 and an `unsolvable` line, after the domain failed to load
         ("enhsp-nofile", {"verdict": "error", "verdict_reason": "crash"},

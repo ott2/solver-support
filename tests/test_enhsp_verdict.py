@@ -81,7 +81,8 @@ def test_a_swallowed_search_exception_is_a_crash():
 @pytest.mark.parametrize('extra, planner, expected', [
     (('-ha', 'true'), None, 'incomplete'),
     (('-ht', 'true'), None, 'incomplete'),
-    (('-ha', 'false'), None, None),
+    # no -planner: ENHSP's defaults are hadd and gbfs, which can prune
+    (('-ha', 'false'), None, 'unverified-search'),
     # a preset overrides -ha (ENHSP.setPlanner resets it)
     (('-ha', 'true'), 'opt-blind', None),
     (('-anytime',), 'sat-hmrp', 'anytime'),
@@ -116,3 +117,34 @@ def test_vocabulary_is_shared_with_savilerow():
              'enhsp-syntax', 'enhsp-nofile', 'enhsp-oom']
     for name in names:
         assert _verdict(name, 0, _enhsp())['verdict'] in SAVILEROW_VERDICTS
+
+
+@pytest.mark.parametrize('extra, expected', [
+    # blind under the WAStar class drops only duplicates, whatever -wh and
+    # whichever of wastar / gbfs; AIBR preprocessing must be off
+    (('-h', 'blind', '-s', 'WAStar', '-dap'), 'exhausted'),
+    (('-h', 'blind', '-s', 'wastar', '-wh', '5', '-dap'), 'exhausted'),
+    (('-h', 'blind', '-dap'), 'exhausted'),                 # -s defaults to gbfs
+    (('-h', 'blind', '-s', 'WAStar'), 'unverified-search'),  # AIBR preprocessing on
+    (('-h', 'blind', '-s', 'lazygbfs', '-dap'), 'unverified-search'),
+    (('-h', 'blind', '-s', 'ehs', '-dap'), 'unverified-search'),
+    (('-h', 'hrmax', '-s', 'WAStar', '-dap'), 'unverified-search'),  # UPF enhsp-opt
+    ((), 'unverified-search'),                                # hadd, gbfs
+])
+def test_only_a_verified_search_proves(extra, expected):
+    command = ['enhsp', '-o', 'd.pddl', '-f', 'p.pddl', *extra]
+    verdict = 'unsat' if expected == 'exhausted' else 'unknown'
+    assert _verdict('enhsp-exhaust', 0, command) == {
+        'verdict': verdict, 'verdict_reason': expected}
+
+
+@pytest.mark.parametrize('planner, expected', [
+    ('opt-blind', 'exhausted'),          # turns AIBR preprocessing off itself
+    ('opt-hrmax', 'unverified-search'),
+    ('sat-hadd', 'unverified-search'),
+    ('no-such-preset', 'unverified-search'),   # ENHSP falls back to gbfs + hadd
+])
+def test_presets(planner, expected):
+    verdict = 'unsat' if expected == 'exhausted' else 'unknown'
+    assert _verdict('enhsp-exhaust', 0, _enhsp(planner=planner)) == {
+        'verdict': verdict, 'verdict_reason': expected}

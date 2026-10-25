@@ -95,7 +95,8 @@ class TestFastDownwardViaUpf:
 class TestEnhspViaUpf:
 
     @pytest.mark.parametrize('fixture, expected', [
-        ('enhsp-exhaust', {'verdict': 'unsat', 'verdict_reason': 'exhausted'}),
+        # no engine_command, so the configuration cannot be verified
+        ('enhsp-exhaust', {'verdict': 'unknown', 'verdict_reason': 'unverified-search'}),
         # UPF calls this UNSOLVABLE_PROVEN: it exited 0 without a plan
         ('enhsp-nofile', {'verdict': 'error', 'verdict_reason': 'crash'}),
         ('enhsp-syntax', {'verdict': 'error', 'verdict_reason': 'input-error'}),
@@ -105,6 +106,22 @@ class TestEnhspViaUpf:
         stderr = _read(f'enhsp/{fixture}.stdout') + _read(f'enhsp/{fixture}.stderr')
         doc = _file(engine='enhsp', engine_status='UNSOLVABLE_PROVEN')
         assert _verdict(_stats(doc, stderr)) == expected
+
+    @pytest.mark.parametrize('engine_command, expected', [
+        # UPF's BLIND-enhsp: WAStar + blind, but AIBR preprocessing still on
+        (['java', '-jar', 'enhsp.jar', '-s', 'WAStar', '-h', 'blind',
+          '-ties', 'larger_g', '-npm'], 'unverified-search'),
+        (['java', '-jar', 'enhsp.jar', '-s', 'WAStar', '-h', 'blind', '-dap'],
+         'exhausted'),
+        # UPF's enhsp-opt, which UPF calls UNSOLVABLE_PROVEN
+        (['java', '-jar', 'enhsp.jar', '-s', 'WAStar', '-h', 'hrmax', '-npm'],
+         'unverified-search'),
+    ])
+    def test_upf_engine_commands(self, engine_command, expected):
+        doc = _file(engine='enhsp', engine_command=engine_command)
+        verdict = 'unsat' if expected == 'exhausted' else 'unknown'
+        assert _verdict(_stats(doc, _read('enhsp/enhsp-exhaust.stdout'))) == {
+            'verdict': verdict, 'verdict_reason': expected}
 
     def test_the_engine_command_is_read(self):
         """Helpful-action pruning is in the argv, not the log."""

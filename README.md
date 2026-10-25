@@ -108,6 +108,9 @@ extraction, warning logger, UPF CLI — with a worked example.
 - [`timing-model.md`](https://github.com/ott2/solver-support/blob/main/docs/timing-model.md)
   — how solver timing is recorded, how the backends map onto one shape, and the
   invariants parsers rely on.
+- [`unsat-soundness.md`](https://github.com/ott2/solver-support/blob/main/docs/unsat-soundness.md)
+  — when a planner's exhausted search counts as a proof of unsatisfiability,
+  and the evidence behind each allowed configuration.
 
 ## Development
 

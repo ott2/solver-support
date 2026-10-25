@@ -327,7 +327,8 @@ argument of its own: a heuristic that can return infinity, partial-order or
 symmetry pruning (`pruning=`), another search algorithm, a new evaluator. So
 these give `unknown`/`unverified-search`, even where they are in fact safe
 (`lmcut`, the PDB heuristics). Widening the list is a deliberate change, made
-one checked component at a time.
+one checked component at a time; the reasoning and the evidence for each
+component are in [`unsat-soundness.md`](unsat-soundness.md).
 
 Within that, the known-unsafe evaluators are named as such. Before 26.6, a search prunes
 every state an evaluator calls a dead end, whether or not
@@ -400,12 +401,14 @@ load its input. A missing domain file prints `Domain parsed`, then
 | `Problem unsolvable`, with `-anytime` / `-autoanytime` | `unknown` | `anytime` |
 | `Problem unsolvable`, with `-dl` | `unknown` | `bounded` |
 | `Problem unsolvable`, helpful actions (`sat-hmrph`, `sat-hmrphj`; or `-ha true` / `-ht true` with no `-planner`) | `unknown` | `incomplete` |
-| `Problem unsolvable`, otherwise | `unsat` | `exhausted` |
+| `Problem unsolvable`, a verified search: `blind` under `wastar` or `gbfs`, with AIBR preprocessing off (`-planner opt-blind`, or `-dap`) | `unsat` | `exhausted` |
+| `Problem unsolvable`, any other search | `unknown` | `unverified-search` |
 | `Unsolvable Problem` (grounding returned nothing) | `unknown` | `grounding` |
 | none of these | `error` | `unexplained` |
 
-A `-planner` preset overrides `-ha` and `-ht`, as in ENHSP's own `setPlanner`.
-As with Fast Downward, `exhausted` becomes a run-level `unsat` only through
+A `-planner` preset overrides `-h`, `-s`, `-ha` and `-ht`, as in ENHSP's own
+`setPlanner`. Why only that search counts, and what checking it took, is in
+[`unsat-soundness.md`](unsat-soundness.md). As with Fast Downward, `exhausted` becomes a run-level `unsat` only through
 `proves-unsat`.
 
 **Via UPF, the verdict needs the result file.** The UPF statuses are wrong in
