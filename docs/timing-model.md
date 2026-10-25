@@ -408,11 +408,15 @@ A `-planner` preset overrides `-ha` and `-ht`, as in ENHSP's own `setPlanner`.
 As with Fast Downward, `exhausted` becomes a run-level `unsat` only through
 `proves-unsat`.
 
-**Via UPF there is no verdict.** The UPF statuses are wrong in both directions:
-`up_enhsp` reports any exit 0 without a plan as `UNSOLVABLE_PROVEN`, and
-`up_fast_downward` reports any exit 12 as `UNSOLVABLE_INCOMPLETELY`. The UPF CLI
-is the consumer's, so if a consumer wants its UPF runs to conclude `unsat`, it
-must read the engine's log and record a verdict on the `solving` phase itself.
+**Via UPF, the verdict needs the result file.** The UPF statuses are wrong in
+both directions: `up_enhsp` reports any exit 0 without a plan as
+`UNSOLVABLE_PROVEN`, and `up_fast_downward` reports any exit 12 as
+`UNSOLVABLE_INCOMPLETELY`. So the core never reads them. A CLI that writes the
+result file (`docs/injection-api.md`) names its engine. The core then runs that
+engine's own reader on the engine log, under the same rules as a direct run
+(`upf_result_stats`): the blind-A* allowlist for Fast Downward, the
+configuration checks for ENHSP. Without the file, a UPF run records no
+verdict.
 
 ## invariants and conventions
 
@@ -494,8 +498,8 @@ every crash of a complete model to `unsat`. Where the `solving` phase recorded a
 
 **No verdict, no `unsat`.** Without a verdict, a completed run's status is all
 there is to go on, and `failed` cannot tell a proof from a crash, so the run is
-`unknown` however complete the model. A UPF run is the usual case, and so is
-any consumer that drives a solver itself. To let such a run conclude `unsat`,
+`unknown` however complete the model. A UPF run without a result file is the
+usual case, and so is any consumer that drives a solver itself. To let such a run conclude `unsat`,
 record a verdict on its `solving` phase (`phase.solver_stats['verdict']`).
 Per-horizon verdicts
 (`solving-horizon-N`) are about one bound each and never decide the run.

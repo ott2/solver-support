@@ -5,6 +5,7 @@ This module provides functions to extract structured statistics from solver outp
 including timing information, search statistics, and solver-specific metrics.
 """
 
+import json
 import re
 from typing import Dict, Any, Optional, List
 from pathlib import Path
@@ -217,6 +218,58 @@ _FD_UNRELIABLE_WITH_AXIOMS_RE = re.compile(r'\b(?:ff|add|hmax)\(')
 # own, so a search that calls anything else is `unverified-search`.
 _FD_CALL_RE = re.compile(r'\b([A-Za-z_]\w*)\s*\(')
 _FD_VERIFIED_CALLS = frozenset({'astar', 'blind'})
+
+
+#: The UPF result file a consumer's CLI writes when ``UpfPlanSolver`` passes it
+#: ``--result PATH`` (see docs/injection-api.md). Written once as the engine
+#: starts (``finished`` false) and rewritten when solving ends. Every key but
+#: ``schema`` and ``finished`` may be absent or null.
+UPF_RESULT_SCHEMA = 1
+UPF_RESULT_KEYS = (
+    'schema',             # UPF_RESULT_SCHEMA
+    'finished',           # True once solving ended, plan or not
+    'plan_found',
+    'steps',              # plan length
+    'score',              # the plan's reported objective
+    'engine',             # the UPF engine name, e.g. fast-downward, enhsp-opt
+    'engine_command',     # the argv the engine ran, where the CLI knows it
+    'engine_returncode',  # the engine's exit code, where the CLI knows it
+    'engine_status',      # UPF's result status: recorded, never trusted
+    'times',              # {read, compile, engine}: seconds
+)
+
+# A UPF Fast Downward run's exit code, as the driver logs it: the last
+# component's code is the driver's own.
+_FD_COMPONENT_EXIT_RE = re.compile(r'^(?:translate|search) exit code: (-?\d+)',
+                                   re.MULTILINE)
+
+
+def _upf_engine_family(engine: str) -> Optional[str]:
+    """Which verdict reader a UPF engine's log is for: 'fd', 'enhsp' or None.
+    SymK is a Fast Downward fork with the same driver and output."""
+    name = engine.lower()
+    if name.startswith(('fast-downward', 'fast_downward', 'symk')):
+        return 'fd'
+    if name.startswith('enhsp'):
+        return 'enhsp'
+    return None
+
+
+def _upf_fd_exit_code(log: str) -> Optional[int]:
+    codes = _FD_COMPONENT_EXIT_RE.findall(log)
+    return int(codes[-1]) if codes else None
+
+
+def read_upf_result(path: Path) -> Optional[Dict[str, Any]]:
+    """Load a UPF result file, or None if it is missing or unreadable, or
+    written to a schema this version does not know."""
+    try:
+        data = json.loads(Path(path).read_text())
+    except (OSError, ValueError):
+        return None
+    if not isinstance(data, dict) or data.get('schema') != UPF_RESULT_SCHEMA:
+        return None
+    return data
 
 
 class SolverStatsExtractor:
@@ -902,6 +955,91 @@ class SolverStatsExtractor:
             
         return stats
     
+    @staticmethod
+    def upf_result_stats(result: Optional[Dict[str, Any]], returncode: Optional[int],
+                         stdout: str, stderr: str, duration: float = 0.0,
+                         timed_out: bool = False,
+                         interrupted: bool = False) -> Dict[str, Any]:
+        """A UPF run's stats and verdict, read from the CLI's result file.
+
+        ``result`` is the parsed file (see :data:`UPF_RESULT_SCHEMA`), or None if
+        the CLI wrote none. The file reports facts, and the verdict is judged
+        here from the engine's own log by :meth:`fd_verdict` or
+        :meth:`enhsp_verdict`, under the same rules as a direct run. UPF's own
+        status is never trusted: ``up_fast_downward`` maps every exit 12 to
+        ``UNSOLVABLE_INCOMPLETELY``, and ``up_enhsp`` maps every run that exits
+        0 without a plan to ``UNSOLVABLE_PROVEN``, a missing input file
+        included. An engine with no reader here gets no verdict.
+
+        The returned stats replace the text-derived ones of
+        :meth:`extract_upf_stats` where they overlap.
+        """
+        if timed_out or interrupted:
+            stats: Dict[str, Any] = {'verdict': 'killed'}
+        elif result is None:
+            # Opted in, yet nothing was written: the CLI died before its engine
+            # started, or never reached the code that writes the file.
+            stats = {'verdict': 'error', 'verdict_reason': 'no-result'}
+        elif not result.get('finished'):
+            # Written as the engine started, never rewritten, and not killed by
+            # the runner: the CLI died during the search.
+            stats = {'verdict': 'error', 'verdict_reason': 'crash'}
+        else:
+            stats = {}
+        if result is None:
+            return stats
+
+        engine = str(result.get('engine') or '')
+        engine_command = result.get('engine_command') or None
+        times = result.get('times') or {}
+        if times.get('compile') is not None:
+            stats['up_compile_time'] = float(times['compile'])
+        if result.get('finished'):
+            stats['solution_found'] = bool(result.get('plan_found'))
+            if result.get('steps') is not None:
+                stats['plan_length'] = int(result['steps'])
+            if result.get('score') is not None:
+                stats['score'] = result['score']
+
+        # The engine's log reaches the CLI's stderr (or stdout); its timeline
+        # starts once UPF has read and compiled the problem, so a killed run's
+        # final cost layer is bounded by the phase duration less those.
+        engine_log = f"{stdout}\n{stderr}"
+        offset = sum(float(times.get(k) or 0.0) for k in ('read', 'compile'))
+        engine_duration = max(duration - offset, 0.0) if duration else None
+        family = _upf_engine_family(engine)
+        if family == 'fd':
+            translate = _TRANSLATE_TIME_RE.search(engine_log)
+            end_hint = engine_duration
+            if end_hint is not None and translate:
+                end_hint -= float(translate.group(1))
+            stats.update(SolverStatsExtractor.extract_search_cost_layers(
+                engine_log, end_hint=end_hint))
+        elif family == 'enhsp':
+            stats.update(SolverStatsExtractor._extract_enhsp_engine_stats(
+                engine_log, duration=engine_duration))
+
+        if 'verdict' in stats:
+            return stats
+        if result.get('plan_found'):
+            stats['verdict'] = 'sat'
+        elif family == 'fd':
+            code = result.get('engine_returncode')
+            if code is None:
+                code = _upf_fd_exit_code(engine_log)
+            if code is not None:
+                stats.update(SolverStatsExtractor.fd_verdict(
+                    int(code), engine_log, engine_command))
+        elif family == 'enhsp':
+            # UPF does not pass ENHSP's exit code on. 0 is what ENHSP exits with
+            # for nearly every ending; the endings that exit otherwise (syntax
+            # error, out of memory) are also read off the log.
+            code = result.get('engine_returncode')
+            stats.update(SolverStatsExtractor.enhsp_verdict(
+                0 if code is None else int(code), engine_log, stderr,
+                engine_command))
+        return stats
+
     @staticmethod
     def extract_upf_stats(stdout: str, stderr: str) -> Dict[str, Any]:
         """

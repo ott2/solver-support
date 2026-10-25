@@ -77,6 +77,7 @@ from .solver_runner import (
 )
 from .solver_stats import (
     SolverStatsExtractor, detect_solver_from_command, FD_ANSWER_RETURNCODES,
+    UPF_RESULT_SCHEMA, UPF_RESULT_KEYS, read_upf_result,
 )
 from .run_summary import RunSummary, PhaseResult, create_run_summary
 
@@ -144,6 +145,9 @@ __all__ = [
     "SolverExecutableError",
     "DIMACS_SAT_RETURNCODES",
     "FD_ANSWER_RETURNCODES",
+    "UPF_RESULT_SCHEMA",
+    "UPF_RESULT_KEYS",
+    "read_upf_result",
     "SolverStatsExtractor",
     "detect_solver_from_command",
     "RunSummary",

@@ -56,10 +56,10 @@ models:
   # planners, because each records a verdict read off its own log: a run is
   # concluded unsat only when its search ran out of states without being
   # bounded or pruning anything (for Fast Downward, only blind A* qualifies),
-  # never just because it found no plan. The one
-  # tune that cannot prove (the `soup` portfolio) opts out below. A solver
-  # whose backend records no verdict, such as a UPF planner, never concludes
-  # unsat, whatever this says.
+  # never just because it found no plan. The one tune that cannot prove (the
+  # `soup` portfolio) opts out below. A solver whose backend records no
+  # verdict, such as a UPF planner whose CLI writes no result file, never
+  # concludes unsat, whatever this says.
   pddl:
     path: models/domain.pddl
     solver: fd

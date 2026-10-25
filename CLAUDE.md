@@ -70,7 +70,7 @@ before first use. Full detail in `docs/injection-api.md`.
 | model-registry packaging (`set_default_config_path` / `set_resource_root` / `set_user_config_finder`) | `model_registry.py` | `ModelRegistry()` **raises** `ModelRegistryError` rather than guessing a config |
 | objective extraction (4 `set_*` setters) | `objective.py` | every route returns `None`; the core records no score |
 | warning logger name (`set_warn_logger_name`) | `utilities.py` | routes to the `'solver_support'` logger |
-| UPF planner CLI (`upfplan_command=` / `UPFPLAN_COMMAND`) | `solver_upfplan.py` | `solve()` raises `ValueError` rather than shelling out to a `None`-prefixed argv |
+| UPF planner CLI (`upfplan_command=` / `UPFPLAN_COMMAND`; opt-in `result_file=` / `UPFPLAN_RESULT_FILE`) | `solver_upfplan.py` | `solve()` raises `ValueError` rather than shelling out to a `None`-prefixed argv; no `--result` is passed |
 
 The objective seam splits **reported** score (display units, consumer may scale) from
 the **raw** objective (model units — it drives horizon-to-horizon comparison and must
@@ -183,8 +183,10 @@ because `failed` is also what a crash looks like: **no verdict, no `unsat`**
 (`fd_verdict`, whose `exhausted` is an **allowlist** — only `astar`+`blind`
 calls in the logged search; anything else is `unverified-search`) and ENHSP
 (`enhsp_verdict`, which must read stderr — ENHSP exits 0 after a missing input
-file) record one; UPF does not, its CLI being the
-consumer's.
+file) record one. UPF records one only when the consumer's CLI writes the opt-in
+result file (`result_file=True`, `upf_result_stats`); the file reports facts
+(the engine, its argv, times) and the core judges from the engine's log. UPF's
+own status is never trusted.
 `proves_unsat` is kept on the summary so a re-finalize cannot drop it.
 Before any verdict, a failed **setup** phase (`translation`, `modelling`,
 `translate-param-N`, classified by name in `_is_setup_phase`) makes a completed

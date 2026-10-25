@@ -77,6 +77,57 @@ UpfPlanSolver.UPFPLAN_COMMAND = 'my-upfplan'     # class-attribute override
 `solve()` refuses with a clear `ValueError` if no command is configured, rather
 than shelling out to a `None`-prefixed argv.
 
+**The result file (opt-in).** Without it, the core learns how a UPF run went
+only from the CLI's exit code (0 with a non-empty stdout is a plan) and text in
+its output, and records no verdict. A CLI that can report its result declares
+it with `result_file=True`, or `UPFPLAN_RESULT_FILE = True` on the class. The
+core then appends `--result PATH` to the argv. It never passes the option
+otherwise, because a CLI that does not know it would fail on it.
+
+The CLI writes JSON to `PATH` twice: once as the engine is about to start, with
+`"finished": false`, and again when solving ends, with `"finished": true`. The
+keys are `solver_support.UPF_RESULT_KEYS`; every key but `schema` and `finished`
+may be absent or null:
+
+```json
+{
+  "schema": 1,
+  "finished": true,
+  "plan_found": false,
+  "steps": null,
+  "score": null,
+  "engine": "fast-downward",
+  "engine_command": null,
+  "engine_returncode": null,
+  "engine_status": "UNSOLVABLE_INCOMPLETELY",
+  "times": {"read": 0.004, "compile": 0.215, "engine": 0.090}
+}
+```
+
+The file reports facts, and the core judges the verdict from the engine's own
+log, with the same `fd_verdict` / `enhsp_verdict` a direct run gets.
+`engine_status` is recorded but never trusted: `up_enhsp` reports every run
+that exits 0 without a plan as `UNSOLVABLE_PROVEN`. So the engine's log must
+reach the CLI's stdout or stderr, as UPF's `output_stream` does.
+
+- `engine` picks the reader. Names starting `fast-downward` or `symk` get
+  `fd_verdict`, and names starting `enhsp` get `enhsp_verdict`. Any other
+  engine gets no verdict.
+- `engine_returncode` is optional. For Fast Downward the driver's own
+  `search exit code:` line stands in for it. UPF does not pass ENHSP's exit
+  code on, but ENHSP's endings are on its log.
+- `engine_command` is the engine's argv, where the CLI knows it. ENHSP's
+  configuration (`-planner`, `-ha`, `-anytime`) is read from it; Fast
+  Downward's search comes from its own log.
+- `times.read` and `times.compile` come before the engine starts. A run killed
+  at the timeout uses them to bound its last cost layer.
+
+With a finished file, `plan_found` decides whether the stdout is a plan, so
+the exit code only says whether the CLI itself ran properly. If the file was
+written but never finished, and the runner did not kill the CLI, the verdict
+is `error` / `crash`. If the CLI was opted in but wrote no file, it is
+`error` / `no-result`.
+
 ## worked example
 
 Wire everything once, at the consumer's own import time — in its

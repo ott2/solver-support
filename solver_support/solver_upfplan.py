@@ -26,9 +26,10 @@ to enhsp-opt), and satisficing ENHSP is opt-in via ``--tune satisficing``.
 """
 
 from pathlib import Path
-from typing import Optional
+from typing import Any, Dict, Optional
 
 from .solver_base import Solver
+from .solver_stats import SolverStatsExtractor, read_upf_result
 from .global_state import global_state
 
 
@@ -40,9 +41,17 @@ class UpfPlanSolver(Solver):
     # per instance via ``upfplan_command=`` or by overriding this class attribute.
     UPFPLAN_COMMAND: Optional[str] = None
 
+    # Whether that CLI accepts ``--result PATH`` and writes the result file
+    # (solver_stats.UPF_RESULT_KEYS). Off by default: a CLI that does not know
+    # the option would fail on it. On, the run's verdict is read from the
+    # engine's log under the facts the file reports, instead of the run going
+    # verdict-less.
+    UPFPLAN_RESULT_FILE: bool = False
+
     def __init__(self, solver_runner, solver_name: str = "upfenhsp",
                  build_mode: Optional[str] = None,
-                 upfplan_command: Optional[str] = None):
+                 upfplan_command: Optional[str] = None,
+                 result_file: Optional[bool] = None):
         super().__init__(solver_runner)
         self.solver_name = solver_name
         # None -> read PDDL via --domain; 'upf'/'upflocal' -> construct via --build.
@@ -50,6 +59,8 @@ class UpfPlanSolver(Solver):
         # The consumer's UPF planner CLI; an explicit argument wins, else the
         # class-attribute override, else unset.
         self.upfplan_command = upfplan_command or self.UPFPLAN_COMMAND
+        self.result_file = (self.UPFPLAN_RESULT_FILE if result_file is None
+                            else result_file)
 
     def _tune_fd_search(self, registry, tune, engine_name) -> Optional[str]:
         """FD search config for the active tune - only for fast-downward engines
@@ -143,7 +154,29 @@ class UpfPlanSolver(Solver):
         if global_state.debug:
             cmd.append("--debug")
 
+        result_path = None
+        if self.result_file:
+            result_path = self._generate_solution_file_path(suffix=".result.json")
+            result_path.unlink(missing_ok=True)
+            cmd += ["--result", str(result_path)]
+
         result = self.runner.run_phase("solving", cmd, expected_outputs=[])
+
+        upf_result = None
+        stats: Dict[str, Any] = {}
+        if result_path is not None and not result.launch_failed:
+            upf_result = read_upf_result(result_path)
+            stats = SolverStatsExtractor.upf_result_stats(
+                upf_result, result.returncode, result.stdout, result.stderr,
+                duration=result.duration, timed_out=result.timed_out,
+                interrupted=result.interrupted)
+            solving_phase = self.runner.summary.get_phase("solving")
+            if solving_phase is not None:
+                solving_phase.solver_stats.update(stats)
+                if stats.get('solution_found'):
+                    self.runner.summary.solution_found = True
+            if result_path.exists():
+                self._update_phase_output_files("solving", result_path)
 
         if result.interrupted:
             self.logger.warning("upfplan solver was interrupted")
@@ -152,13 +185,27 @@ class UpfPlanSolver(Solver):
         # Timeout with no plan is a timeout (mirrors UPF/pddl handling).
         self._handle_timeout_result(result, "upfplan solver")
 
-        if result.success and result.stdout and result.stdout.strip():
+        # With a finished result file, it says whether there is a plan, and the
+        # exit code says only whether the CLI itself ran properly.
+        if upf_result is not None and upf_result.get('finished'):
+            has_plan = bool(upf_result.get('plan_found'))
+        else:
+            has_plan = result.success
+        if has_plan and result.stdout and result.stdout.strip():
             solution_file = self._generate_solution_file_path()
             solution_file.write_text(result.stdout)
             if self.runner.summary.phases:
                 self.runner.summary.phases[-1].output_files = [str(solution_file)]
             self.logger.info(f"upfplan solution written to {solution_file}")
             return solution_file
+
+        if stats:
+            verdict = {k: v for k, v in stats.items() if k.startswith('verdict')}
+            if stats.get('verdict') == 'error':
+                self.logger.warning(f"upfplan solver failed: {verdict} {result.stderr}")
+            else:
+                self.logger.info(f"upfplan solver found no plan: {verdict}")
+            return None
 
         if result.success:
             self.logger.warning("upfplan solver produced no plan")
