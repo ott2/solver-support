@@ -613,7 +613,9 @@ class ModelRegistry(CommandBuilderMixin):
         prunes unsafely on a task with axioms. So a tune preset may carry
         ``proves-unsat: false``, and the answer is the model's flag AND the
         effective tune's. A tune can only take the claim away, never grant it to
-        a model that cannot prove.
+        a model that cannot prove. (A tune's explicit ``proves-unsat: true``
+        does something else as well: it vouches for that tune's search, see
+        :meth:`get_declaring_tune`.)
 
         Args:
             model_type: The model type.
@@ -710,6 +712,33 @@ class ModelRegistry(CommandBuilderMixin):
         """
         return self.get_solver_config(solver_name).get(
             'savilerow', LEGACY_CONJURE_SAVILEROW)
+
+    def get_declaring_tune(self, solver_name: str, tune: Optional[str],
+                           key: str) -> Optional[Dict[str, Any]]:
+        """The tune preset that vouches for its own search, if this one does.
+
+        A planner's exhausted search is read as a proof only on the built-in
+        allowlist (docs/unsat-soundness.md). A tune that declares
+        ``proves-unsat: true`` explicitly vouches for its search as well: the
+        verdict readers then accept that exact search's exhaustion as
+        ``unsat`` / ``exhausted-declared``. The soundness of the claim is the
+        config author's. Resolved as the builders resolve it, by the preset
+        key the backend reads (``search``, ``planner``, ``fd_search``,
+        ``engine``), so the preset returned is the one the command came from.
+
+        Returns:
+            The preset's mapping if it declares ``proves-unsat: true``, else
+            None. An absent key (or ``false``) never vouches.
+        """
+        try:
+            solver_config = self.get_solver_config(solver_name)
+        except ModelRegistryError:
+            return None
+        name = self._effective_tune(solver_config, tune, key)
+        preset = solver_config.get('tune', {}).get(name)
+        if isinstance(preset, dict) and preset.get('proves-unsat') is True:
+            return preset
+        return None
 
     def get_tune_backend(self, solver_name: str) -> str:
         """Return the backend whose tune presets govern ``--tune`` for a solver.

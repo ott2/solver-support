@@ -184,8 +184,11 @@ because `failed` is also what a crash looks like: **no verdict, no `unsat`**
 0 after a missing input file) record one. Their `exhausted` is an
 **allowlist** of checked blind searches (FD: only `astar`/`blind` calls in the
 logged search; ENHSP: `blind` under `wastar`/`gbfs` with AIBR preprocessing
-off); anything else is `unverified-search`. Widen it only with the evidence
-recorded in `docs/unsat-soundness.md`. UPF records one only when the consumer's CLI writes the opt-in
+off); anything else is `unverified-search`, unless the run's tune declares an
+explicit `proves-unsat: true` and exactly its search ran (`get_declaring_tune`;
+`exhausted-declared`, which never overrides a bound, known-unsafe pruning or a
+limit). Widen the built-in lists only with the evidence recorded in
+`docs/unsat-soundness.md`. UPF records one only when the consumer's CLI writes the opt-in
 result file (`result_file=True`, `upf_result_stats`); the file reports facts
 (the engine, its argv, times) and the core judges from the engine's log. UPF's
 own status is never trusted.

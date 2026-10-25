@@ -101,9 +101,16 @@ class FastDownwardSolver(Solver):
 
         verdict: Dict[str, Any] = {}
         if not result.launch_failed:
+            # A tune that declares `proves-unsat: true` vouches for its search.
+            declaring = None if anytime else (
+                global_state.model_registry.get_declaring_tune(
+                    solver_name, tune, 'search'))
+            declared_search = (declaring.get('search')
+                               if isinstance(declaring, dict) else None)
             verdict = SolverStatsExtractor.fd_verdict(
                 result.returncode, result.stdout, cmd, timed_out=result.timed_out,
-                interrupted=result.interrupted, anytime=anytime)
+                interrupted=result.interrupted, anytime=anytime,
+                declared_search=declared_search)
             solving_phase = self.runner.summary.get_phase("solving")
             if solving_phase is not None:
                 solving_phase.solver_stats.update(verdict)

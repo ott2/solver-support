@@ -166,10 +166,17 @@ class UpfPlanSolver(Solver):
         stats: Dict[str, Any] = {}
         if result_path is not None and not result.launch_failed:
             upf_result = read_upf_result(result_path)
+            # A tune that declares `proves-unsat: true` vouches for the engine
+            # and Fast Downward search it chose.
+            declaring = registry.get_declaring_tune(
+                self.solver_name, tune, 'fd_search' if fd_search else 'engine')
+            vouched = isinstance(declaring, dict)
             stats = SolverStatsExtractor.upf_result_stats(
                 upf_result, result.returncode, result.stdout, result.stderr,
                 duration=result.duration, timed_out=result.timed_out,
-                interrupted=result.interrupted)
+                interrupted=result.interrupted,
+                declared_search=fd_search if vouched else None,
+                declared_engine=engine_name if vouched else None)
             solving_phase = self.runner.summary.get_phase("solving")
             if solving_phase is not None:
                 solving_phase.solver_stats.update(stats)

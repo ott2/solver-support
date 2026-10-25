@@ -76,9 +76,20 @@ class EnhspSolver(Solver):
         # alike, so the summary's outcome is decided by this, not by `failed`.
         verdict: Dict[str, Any] = {}
         if not result.launch_failed:
+            # A tune that declares `proves-unsat: true` vouches for the command
+            # it builds on its own, without --options.
+            declared_command = None
+            declaring = global_state.model_registry.get_declaring_tune(
+                solver_name, tune, 'planner')
+            if isinstance(declaring, dict):
+                declared_command = global_state.model_registry.build_enhsp_command(
+                    model_path=model_path, param_path=str(param_file),
+                    plan_path=str(solution_file), tune=tune,
+                    extra_options=None, solver_name=solver_name)
             verdict = SolverStatsExtractor.enhsp_verdict(
                 result.returncode, result.stdout, result.stderr, cmd,
-                timed_out=result.timed_out, interrupted=result.interrupted)
+                timed_out=result.timed_out, interrupted=result.interrupted,
+                declared_command=declared_command)
             solving_phase = self.runner.summary.get_phase("solving")
             if solving_phase is not None:
                 solving_phase.solver_stats.update(verdict)

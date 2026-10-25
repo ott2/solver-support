@@ -95,6 +95,9 @@ solvers:
         description: cost-optimal blind A*; complete on any task
       lmcut:
         search: "astar(lmcut())"
+        # Running out of states proves no plan exists only for blind A*,
+        # unless a tune vouches for its own search with an explicit
+        # `proves-unsat: true` (LM-cut is sound; the claim is then yours).
         description: cost-optimal A* with LM-cut; rejects tasks with axioms
       ff:
         search: "lazy_greedy([ff()])"

@@ -86,6 +86,11 @@ solvers:
       blind:
         search: "astar(blind())"
         description: cost-optimal blind A*, complete on any task
+      lmcut:
+        search: "astar(lmcut())"
+        # LM-cut is not on the built-in allowlist; this config vouches for it.
+        proves-unsat: true
+        description: cost-optimal A* with LM-cut
       ff:
         search: "lazy_greedy([ff()])"
         # FF prunes infinite-valued states even where axioms make that unsafe,
@@ -116,6 +121,10 @@ solvers:
       satisficing:
         fd_search: "lazy_greedy([ff()])"
         description: satisficing greedy best-first with FF
+      lmcut:
+        fd_search: "astar(lmcut())"
+        proves-unsat: true
+        description: cost-optimal A* with LM-cut, vouched for by this config
 
   kissat:
     solver_type: savilerow

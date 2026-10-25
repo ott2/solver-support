@@ -226,6 +226,13 @@ _FD_UNRELIABLE_WITH_AXIOMS_RE = re.compile(r'\b(?:ff|add|hmax)\(')
 # own, so a search that calls anything else is `unverified-search`.
 _FD_CALL_RE = re.compile(r'\b([A-Za-z_]\w*)\s*\(')
 _FD_VERIFIED_CALLS = frozenset({'astar', 'blind'})
+# A registry tune with an explicit `proves-unsat: true` vouches for its own
+# search, which then stands in for the allowlist (`exhausted-declared`). The
+# vouching binds to that exact search: it is compared with the --search the
+# driver logged, and any predefinition (--evaluator etc.), which no tune emits,
+# means something else ran.
+_FD_LOGGED_SEARCH_ARG_RE = re.compile(r"--search\s+'([^']*)'")
+_FD_PREDEFINITION_RE = re.compile(r'--(?:evaluator|heuristic|landmarks)\b')
 
 
 #: The UPF result file a consumer's CLI writes when ``UpfPlanSolver`` passes it
@@ -706,7 +713,8 @@ class SolverStatsExtractor:
     @staticmethod
     def fd_verdict(returncode: int, stdout: str, command: Optional[List[str]] = None,
                    timed_out: bool = False, interrupted: bool = False,
-                   anytime: bool = False) -> Dict[str, Any]:
+                   anytime: bool = False,
+                   declared_search: Optional[str] = None) -> Dict[str, Any]:
         """What a Fast Downward or SymK run concluded, from its exit code and log.
 
         Returns ``{'verdict': ...}`` in the :data:`SAVILEROW_VERDICTS`
@@ -739,12 +747,18 @@ class SolverStatsExtractor:
             anytime: it was a portfolio (``--alias``), whose 12 can mask its
                 components' time-outs and whose exhaustion line may come from a
                 component that pruned unsafely.
+            declared_search: the ``search:`` of a registry tune that declares
+                ``proves-unsat: true``, which vouches for it. If exactly that
+                search ran and exhausted, and is not on the allowlist, the
+                verdict is ``unsat`` / ``exhausted-declared``. It never
+                overrides anything the log shows: a bound, an evaluator known
+                to prune unsafely, a limit.
         """
         if timed_out or interrupted:
             return {'verdict': 'killed'}
         if returncode == 12:
             verdict, reason = SolverStatsExtractor._fd_unsolved_verdict(
-                stdout or '', command or [], anytime)
+                stdout or '', command or [], anytime, declared_search)
         elif returncode == 34 and anytime:
             # A portfolio member that does not support the task (e.g. axioms)
             # bails out with 34 while the others carry on; the driver reports
@@ -763,7 +777,7 @@ class SolverStatsExtractor:
 
     @staticmethod
     def _fd_unsolved_verdict(stdout: str, command: List[str],
-                             anytime: bool):
+                             anytime: bool, declared_search: Optional[str] = None):
         """Read an exit 12 off the log: (verdict, verdict_reason)."""
         if anytime:
             return 'unknown', 'portfolio'
@@ -784,9 +798,11 @@ class SolverStatsExtractor:
             if SolverStatsExtractor._fd_pruned_unsafely(search, stdout):
                 return 'unknown', 'unsafe-pruning'
             calls = set(_FD_CALL_RE.findall(search))
-            if not calls or not calls <= _FD_VERIFIED_CALLS:
-                return 'unknown', 'unverified-search'
-            return 'unsat', 'exhausted'
+            if calls and calls <= _FD_VERIFIED_CALLS:
+                return 'unsat', 'exhausted'
+            if SolverStatsExtractor._fd_ran_declared(search, logged, declared_search):
+                return 'unsat', 'exhausted-declared'
+            return 'unknown', 'unverified-search'
         bounds = _SYMK_BOUND_RE.findall(stdout)
         if bounds:
             lower, upper = (int(b) for b in bounds[-1])
@@ -799,6 +815,23 @@ class SolverStatsExtractor:
         # search the planner itself judged incomplete or unsafely pruned
         # (`Search terminated without finding a plan!`).
         return 'unknown', 'incomplete'
+
+    @staticmethod
+    def _fd_ran_declared(search: str, logged: List[str],
+                         declared: Optional[str]) -> bool:
+        """Whether the search that ran is exactly the one a tune vouched for."""
+        if not declared:
+            return False
+        if logged:
+            if _FD_PREDEFINITION_RE.search(search):
+                return False
+            ran = _FD_LOGGED_SEARCH_ARG_RE.findall(search)
+            if len(ran) != 1:
+                return False
+            search = ran[0]
+        def squash(s):
+            return re.sub(r'\s+', '', s)
+        return squash(search) == squash(declared)
 
     @staticmethod
     def _fd_pruned_unsafely(search: str, stdout: str) -> bool:
@@ -815,7 +848,8 @@ class SolverStatsExtractor:
     def enhsp_verdict(returncode: int, stdout: str, stderr: str = '',
                       command: Optional[List[str]] = None,
                       timed_out: bool = False,
-                      interrupted: bool = False) -> Dict[str, Any]:
+                      interrupted: bool = False,
+                      declared_command: Optional[List[str]] = None) -> Dict[str, Any]:
         """What an ENHSP run concluded, from its output: the twin of
         :meth:`fd_verdict`, in the same vocabulary.
 
@@ -825,10 +859,16 @@ class SolverStatsExtractor:
         code says almost nothing, and stderr matters: a logged exception goes
         there while the run carries on to exit 0.
 
-        ``unsat`` (reason ``exhausted``) means the configured search ran out of
-        states. Whether that search is complete is still the registry's
-        ``get_proves_unsat`` to say. Helpful-action pruning and a ``-dl`` cost
-        bound are read off the argv and give ``unknown``.
+        ``unsat`` (reason ``exhausted``) means a search on the allowlist ran
+        out of states (docs/unsat-soundness.md). Helpful-action pruning, a
+        ``-dl`` cost bound and anytime mode are read off the argv and give
+        ``unknown``; any other search gives ``unknown`` /
+        ``unverified-search``, unless ``declared_command`` is given: the argv
+        a registry tune declaring ``proves-unsat: true`` builds on its own. If
+        the run's argv is exactly that, the tune vouches for it and the
+        verdict is ``unsat`` / ``exhausted-declared``. Whether any of this
+        becomes a run-level ``unsat`` is still the registry's
+        ``get_proves_unsat`` to say.
         """
         if timed_out or interrupted:
             return {'verdict': 'killed'}
@@ -847,6 +887,9 @@ class SolverStatsExtractor:
             verdict, reason = 'error', 'crash' if returncode < 0 else 'unexplained'
         elif _ENHSP_EXHAUSTED_LINE in stdout:
             verdict, reason = SolverStatsExtractor._enhsp_exhausted_verdict(argv)
+            if (reason == 'unverified-search' and declared_command
+                    and list(argv) == list(declared_command)):
+                verdict, reason = 'unsat', 'exhausted-declared'
         elif _ENHSP_REFUSED_LINE in stdout:
             # prepareForSearch returned false. That may be a sound reachability
             # refutation, but the log does not say which, so it proves nothing.
@@ -978,7 +1021,9 @@ class SolverStatsExtractor:
     def upf_result_stats(result: Optional[Dict[str, Any]], returncode: Optional[int],
                          stdout: str, stderr: str, duration: float = 0.0,
                          timed_out: bool = False,
-                         interrupted: bool = False) -> Dict[str, Any]:
+                         interrupted: bool = False,
+                         declared_search: Optional[str] = None,
+                         declared_engine: Optional[str] = None) -> Dict[str, Any]:
         """A UPF run's stats and verdict, read from the CLI's result file.
 
         ``result`` is the parsed file (see :data:`UPF_RESULT_SCHEMA`), or None if
@@ -989,6 +1034,12 @@ class SolverStatsExtractor:
         ``UNSOLVABLE_INCOMPLETELY``, and ``up_enhsp`` maps every run that exits
         0 without a plan to ``UNSOLVABLE_PROVEN``, a missing input file
         included. An engine with no reader here gets no verdict.
+
+        ``declared_search`` / ``declared_engine`` come from a registry tune
+        that declares ``proves-unsat: true`` (``get_declaring_tune``): it
+        vouches for the Fast Downward search it passed, or for the ENHSP engine
+        it chose, so that exact configuration's exhaustion is ``unsat`` /
+        ``exhausted-declared``.
 
         The returned stats replace the text-derived ones of
         :meth:`extract_upf_stats` where they overlap.
@@ -1048,7 +1099,8 @@ class SolverStatsExtractor:
                 code = _upf_fd_exit_code(engine_log)
             if code is not None:
                 stats.update(SolverStatsExtractor.fd_verdict(
-                    int(code), engine_log, engine_command))
+                    int(code), engine_log, engine_command,
+                    declared_search=declared_search))
         elif family == 'enhsp':
             # UPF does not pass ENHSP's exit code on. 0 is what ENHSP exits with
             # for nearly every ending; the endings that exit otherwise (syntax
@@ -1057,6 +1109,11 @@ class SolverStatsExtractor:
             stats.update(SolverStatsExtractor.enhsp_verdict(
                 0 if code is None else int(code), engine_log, stderr,
                 engine_command))
+            # ENHSP logs no configuration, and UPF builds its argv from the
+            # engine, so the vouching binds to the engine the tune chose.
+            if (stats.get('verdict_reason') == 'unverified-search'
+                    and declared_engine and engine == declared_engine):
+                stats.update(verdict='unsat', verdict_reason='exhausted-declared')
         return stats
 
     @staticmethod

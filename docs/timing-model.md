@@ -299,7 +299,9 @@ where the code is ambiguous, into the same vocabulary as the Savile Row verdict.
 - `Completely explored state space -- no solution!` gives `unsat`/`exhausted`
   only for blind A* (below). It gives `bounded` instead if the search has a
   `bound=`, `unsafe-pruning` if an evaluator's dead ends are unreliable on this
-  task, and `unverified-search` for any other search. The exhaustion line looks the same either way, so the search is read
+  task, and `unverified-search` for any other search. If the run's tune
+  declares `proves-unsat: true` and exactly its `search:` ran, that search
+  counts too, as `exhausted-declared`. The exhaustion line looks the same either way, so the search is read
   from the driver's `search command line string`. That line has aliases
   expanded and `--evaluator` predefinitions included. If the line is missing,
   the search is read from the argv's `--search`. The translator's
@@ -402,6 +404,7 @@ load its input. A missing domain file prints `Domain parsed`, then
 | `Problem unsolvable`, with `-dl` | `unknown` | `bounded` |
 | `Problem unsolvable`, helpful actions (`sat-hmrph`, `sat-hmrphj`; or `-ha true` / `-ht true` with no `-planner`) | `unknown` | `incomplete` |
 | `Problem unsolvable`, a verified search: `blind` under `wastar` or `gbfs`, with AIBR preprocessing off (`-planner opt-blind`, or `-dap`) | `unsat` | `exhausted` |
+| `Problem unsolvable`, the exact command of a tune declaring `proves-unsat: true` | `unsat` | `exhausted-declared` |
 | `Problem unsolvable`, any other search | `unknown` | `unverified-search` |
 | `Unsolvable Problem` (grounding returned nothing) | `unknown` | `grounding` |
 | none of these | `error` | `unexplained` |
@@ -481,7 +484,10 @@ For a planner, being able to prove depends on the **search** as well as the mode
 `proves-unsat` AND the effective tune's. A tune preset may carry
 `proves-unsat: false` (for example an incomplete search such as EHC, or an
 anytime portfolio), which takes the claim away. A tune can never grant it to
-a model that cannot prove. `finalize` keeps the value on the summary as
+a model that cannot prove. An explicit `proves-unsat: true` on a tune does
+something else as well: it vouches for that tune's search, so its exhaustion
+counts even when it is not on the built-in allowlist (`exhausted-declared`,
+see [`unsat-soundness.md`](unsat-soundness.md)). `finalize` keeps the value on the summary as
 `proves_unsat`, and a later `finalize` that passes None reuses it. So a
 re-finalize that folds in a late phase, as `horizon_utils` does, cannot drop it.
 

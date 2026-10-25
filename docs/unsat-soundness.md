@@ -176,6 +176,43 @@ exits 0 without a plan as `UNSOLVABLE_PROVEN`. Their configurations:
 
 A UPF result file needs `engine_command` for any of these to be read at all.
 
+## Declared by the registry
+
+A consumer that knows a search is sound without the library having checked it
+(`astar(lmcut())`, say) can say so in its config. An explicit
+`proves-unsat: true` on a tune vouches for that tune's own search:
+
+```yaml
+fd:
+  tune:
+    lmcut:
+      search: "astar(lmcut())"
+      proves-unsat: true
+```
+
+Its exhaustion is then `unsat` with the reason `exhausted-declared`, kept
+apart from `exhausted` so a reader can tell the library's checked proofs from
+the config's. The rules (`ModelRegistry.get_declaring_tune`):
+
+- **Only explicit `true` vouches.** An absent key leaves the built-in
+  allowlist alone; `false` still takes the claim away. The model must still
+  declare `proves-unsat: true` for any of it to become a run-level `unsat`.
+- **It binds to the tune's own search.** `--options` can replace or add to
+  what a tune builds, so the vouching applies only when exactly that search
+  ran. For Fast Downward, the `--search` in the driver's logged line must equal
+  the tune's `search:`, ignoring whitespace, and the line must carry no
+  `--evaluator`/`--heuristic`/`--landmarks` predefinition. For ENHSP, which
+  logs no configuration, the run's argv must equal the one the tune builds
+  with no `--options`. For UPF, the tune's `fd_search` is compared with the
+  logged search, or, for ENHSP, the tune's engine with the file's `engine`.
+- **It never overrides what the run shows.** It turns only
+  `unverified-search` into a proof. A bound, an evaluator known to prune
+  unsafely on the task, helpful actions, anytime mode, a limit, a crash or a
+  kill are reported as before.
+
+The soundness of a declared search is the config author's claim, not this
+library's.
+
 ## Widening the lists
 
 To add a component, check what it removes against the table under "The
