@@ -207,6 +207,16 @@ _FD_AXIOMS_RE = re.compile(r'^Translator axioms: (\d+)', re.MULTILINE)
 # heuristics are unreliable exactly when the task has axioms.
 _FD_UNRELIABLE_RE = re.compile(r'\b(?:cg|cea|hm|lmcount|landmark_sum)\(')
 _FD_UNRELIABLE_WITH_AXIOMS_RE = re.compile(r'\b(?:ff|add|hmax)\(')
+# Even with no unreliable evaluator, exhaustion is read as a proof only for a
+# search that is known to be complete and to prune nothing: A* with the blind
+# heuristic, which never returns infinity. A* is complete on a finite state space
+# (Hart, Nilsson & Raphael 1968), so an empty open list means no plan (cf.
+# Eriksson, Roeger & Helmert, ICAPS 2017). Any other component - a heuristic
+# that can return infinity, partial-order or symmetry pruning, another search
+# algorithm, an evaluator nobody has checked - needs a soundness argument of its
+# own, so a search that calls anything else is `unverified-search`.
+_FD_CALL_RE = re.compile(r'\b([A-Za-z_]\w*)\s*\(')
+_FD_VERIFIED_CALLS = frozenset({'astar', 'blind'})
 
 
 class SolverStatsExtractor:
@@ -648,11 +658,12 @@ class SolverStatsExtractor:
         ``unsat`` is about *the configured search*, not the task. With reason
         ``exhausted`` it is this function's own reading of a pre-26.6 planner
         whose search ran out of states. That is sound only if the search is
-        complete and prunes safely. The pruning half is checked here, as 26.6
-        checks it itself: an evaluator whose dead ends are unreliable on this
-        task (``ff`` on a task with axioms, ``cg`` on any) gives ``unknown`` /
-        ``unsafe-pruning``. Completeness of the search algorithm is not
-        checked here. Without a reason, ``unsat`` is the planner's own claim.
+        complete and prunes nothing it should not, so it is given only to a
+        search on an allowlist: A* with the blind heuristic. An evaluator whose
+        dead ends are unreliable on this task (``ff`` on a task with axioms,
+        ``cg`` on any) gives ``unknown`` / ``unsafe-pruning``; any other search
+        gives ``unknown`` / ``unverified-search``. Without a reason, ``unsat``
+        is the planner's own claim.
         Either way, turning it into a run-level outcome is the caller's job,
         through the registry's ``get_proves_unsat``.
 
@@ -711,6 +722,9 @@ class SolverStatsExtractor:
                 return 'unknown', 'bounded'
             if SolverStatsExtractor._fd_pruned_unsafely(search, stdout):
                 return 'unknown', 'unsafe-pruning'
+            calls = set(_FD_CALL_RE.findall(search))
+            if not calls or not calls <= _FD_VERIFIED_CALLS:
+                return 'unknown', 'unverified-search'
             return 'unsat', 'exhausted'
         bounds = _SYMK_BOUND_RE.findall(stdout)
         if bounds:

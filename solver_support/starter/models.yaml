@@ -55,7 +55,8 @@ models:
   # no plan, given a complete search. It is safe to leave on for these three
   # planners, because each records a verdict read off its own log: a run is
   # concluded unsat only when its search ran out of states without being
-  # bounded or pruned unsafely, never just because it found no plan. The one
+  # bounded or pruning anything (for Fast Downward, only blind A* qualifies),
+  # never just because it found no plan. The one
   # tune that cannot prove (the `soup` portfolio) opts out below. A solver
   # whose backend records no verdict, such as a UPF planner, never concludes
   # unsat, whatever this says.
@@ -96,9 +97,10 @@ solvers:
         description: cost-optimal A* with LM-cut; rejects tasks with axioms
       ff:
         search: "lazy_greedy([ff()])"
-        # FF prunes states it scores as infinite, which is unsafe on tasks with
-        # axioms. The verdict sees that in the log and claims no proof there;
-        # on a task without axioms, running out of states is a proof.
+        # Greedy search with FF, which prunes states it scores as infinite: not
+        # a search whose exhaustion is a proof. The verdict reads it as
+        # `unknown` (`unverified-search`, or `unsafe-pruning` on a task with
+        # axioms); only blind A* exhausting is read as `unsat`.
         description: satisficing greedy best-first search with FF
       soup:
         alias: seq-sat-fdss-2018

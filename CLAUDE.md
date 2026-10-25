@@ -180,8 +180,10 @@ complete the model, since refuting horizons 1..N says nothing about N+1.
 `unsat` also needs the `solving` phase to have recorded an `unsat` `verdict`,
 because `failed` is also what a crash looks like: **no verdict, no `unsat`**
 (with `proves_unsat`, a verdict-less `failed` is `unknown`). FD/SymK
-(`fd_verdict`) and ENHSP (`enhsp_verdict`, which must read stderr — ENHSP exits
-0 after a missing input file) record one; UPF does not, its CLI being the
+(`fd_verdict`, whose `exhausted` is an **allowlist** — only `astar`+`blind`
+calls in the logged search; anything else is `unverified-search`) and ENHSP
+(`enhsp_verdict`, which must read stderr — ENHSP exits 0 after a missing input
+file) record one; UPF does not, its CLI being the
 consumer's.
 `proves_unsat` is kept on the summary so a re-finalize cannot drop it.
 Before any verdict, a failed **setup** phase (`translation`, `modelling`,

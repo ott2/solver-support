@@ -296,10 +296,10 @@ where the code is ambiguous, into the same vocabulary as the Savile Row verdict.
 
 - `Time limit reached. Abort search.` (the search's `max_time=`) gives
   `search-limit`.
-- `Completely explored state space -- no solution!` gives `unsat`/`exhausted`.
-  It gives `bounded` instead if the search has a `bound=`, and
-  `unsafe-pruning` if an evaluator's dead ends are unreliable on this task
-  (below). The exhaustion line looks the same either way, so the search is read
+- `Completely explored state space -- no solution!` gives `unsat`/`exhausted`
+  only for blind A* (below). It gives `bounded` instead if the search has a
+  `bound=`, `unsafe-pruning` if an evaluator's dead ends are unreliable on this
+  task, and `unverified-search` for any other search. The exhaustion line looks the same either way, so the search is read
   from the driver's `search command line string`. That line has aliases
   expanded and `--evaluator` predefinitions included. If the line is missing,
   the search is read from the argv's `--search`. The translator's
@@ -315,7 +315,21 @@ where the code is ambiguous, into the same vocabulary as the Savile Row verdict.
   plan!`).
 
 **`exhausted` is this library's reading, not the planner's.** It is sound only
-if the search is complete and prunes safely. Before 26.6, a search prunes
+if the search is complete and prunes nothing it should not. So it is given
+only on an allowlist, which today is A* with the blind heuristic. Every call in
+the logged search must be `astar` or `blind`; keyword options such as
+`cost_type=` don't matter. A* is complete on a finite state space (Hart, Nilsson
+& Raphael 1968), and blind never returns infinity, so it never prunes a state
+from which the goal is reachable. An empty open list therefore proves there is
+no plan (cf. Eriksson, Röger & Helmert, ICAPS 2017, which treats the expanded
+states as an unsolvability certificate). Anything else needs a soundness
+argument of its own: a heuristic that can return infinity, partial-order or
+symmetry pruning (`pruning=`), another search algorithm, a new evaluator. So
+these give `unknown`/`unverified-search`, even where they are in fact safe
+(`lmcut`, the PDB heuristics). Widening the list is a deliberate change, made
+one checked component at a time.
+
+Within that, the known-unsafe evaluators are named as such. Before 26.6, a search prunes
 every state an evaluator calls a dead end, whether or not
 `dead_ends_are_reliable()`. So a relaxation heuristic on a task with axioms,
 where infinity is not a dead end, "exhausts" without proving anything. The log
@@ -330,9 +344,8 @@ does show the pruning half, and `fd_verdict` checks it as 26.6 does:
 Any such evaluator gives `unknown`/`unsafe-pruning`. From 26.6 the planner
 checks it itself (upstream issue1201): a safe exhaustion exits 11 and an unsafe
 one exits 12 with no exhaustion line. So `exhausted` only ever comes from older
-planners and SymK. Completeness of the search algorithm itself (EHC, say) is
-left to the registry's `proves-unsat`, which a tune preset can switch off, and
-which decides whether `exhausted` becomes a run-level `unsat`.
+planners and SymK. The registry's `proves-unsat`, which a tune preset can
+switch off, still decides whether `exhausted` becomes a run-level `unsat`.
 
 **The planner's own time limit is a timeout.** `search-limit` and
 `translate-limit` make `solve()` raise `TimeoutError`, exactly as a watchdog

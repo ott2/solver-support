@@ -113,10 +113,11 @@ class TestUnsafePruning:
 
     @pytest.mark.parametrize('search', [
         'lazy_greedy([ff()])', 'eager_greedy([add()])', 'astar(hmax())'])
-    def test_relaxation_heuristics_are_safe_without_axioms(self, search):
-        """`fd-exhaust` has `Translator axioms: 0`."""
+    def test_relaxation_heuristics_without_axioms_are_unverified(self, search):
+        """`fd-exhaust` has `Translator axioms: 0`, so FD would call these dead
+        ends reliable, but only blind A* is on the allowlist."""
         assert _verdict(12, _swap_search(_log('fd-exhaust'), search), None) == {
-            'verdict': 'unsat', 'verdict_reason': 'exhausted'}
+            'verdict': 'unknown', 'verdict_reason': 'unverified-search'}
 
     @pytest.mark.parametrize('search', [
         'lazy_greedy([cg()])', 'lazy_greedy([cea()])', 'astar(hm(m=2))',
@@ -203,3 +204,44 @@ def test_answer_codes_are_exactly_the_non_errors():
     for code in range(0, 40):
         answered = _verdict(code, '', _fd('astar(blind())'))['verdict'] != 'error'
         assert (code in FD_ANSWER_RETURNCODES) == answered, code
+
+
+class TestVerifiedSearch:
+    """Exhaustion is a proof only for a search known to be complete and to prune
+    nothing: A* with the blind heuristic. Everything else is unverified."""
+
+    @pytest.mark.parametrize('search', [
+        'astar(blind())',
+        'astar(blind(), cost_type=one)',
+        'astar(blind(), reopen_closed=false, verbosity=silent)',
+    ])
+    def test_blind_astar_is_a_proof(self, search):
+        assert _verdict(12, _swap_search(_log('fd-exhaust'), search), None) == {
+            'verdict': 'unsat', 'verdict_reason': 'exhausted'}
+
+    @pytest.mark.parametrize('search', [
+        'astar(lmcut())',                       # safe, but not verified here
+        'astar(blind(), pruning=stubborn_sets_simple())',
+        'astar(blind(), pruning=null())',
+        'eager_greedy([blind()])',
+        'let(h, blind(), astar(h))',
+        'astar(my_new_evaluator())',
+    ])
+    def test_anything_else_is_unverified(self, search):
+        assert _verdict(12, _swap_search(_log('fd-exhaust'), search), None) == {
+            'verdict': 'unknown', 'verdict_reason': 'unverified-search'}
+
+    def test_a_predefined_evaluator_is_checked(self):
+        log = _log('fd-exhaust').replace(
+            "--search 'astar(blind())'",
+            "--evaluator 'h=lmcut()' --search 'astar(h)'")
+        assert _verdict(12, log, None)['verdict_reason'] == 'unverified-search'
+
+    def test_an_unknown_search_is_unverified(self):
+        """No logged line and no --search: nothing to verify."""
+        assert _verdict(12, _EXHAUSTED, ['fd', 'd.pddl', 'p.pddl']) == {
+            'verdict': 'unknown', 'verdict_reason': 'unverified-search'}
+
+    def test_known_unsafe_outranks_unverified(self):
+        assert _verdict(12, _swap_search(_log('fd-exhaust'), 'astar(cg())'),
+                        None)['verdict_reason'] == 'unsafe-pruning'
