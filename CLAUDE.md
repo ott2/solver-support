@@ -95,6 +95,9 @@ Roughly a pipeline, bottom-up:
   `effective_config()` / `dump_config()` report the result for a consumer's
   `show-registry`-style command. The dump is a *view* — it drops comments, and a
   whole-file copy readopted as an override would pin every key at today's value.
+  `register_model` / `register_tune` add entries at run time, in memory only
+  (idempotent; persisting and cross-process locking are the consumer's), and
+  `global_state.set_model_registry` makes a consumer's registry the one solvers read.
 - **`solver_base.py`** — the abstract `Solver`; `solve(param_file, **kwargs) -> Optional[Path]`.
   Solvers run in the *current working directory* (the caller has already chdir'd) and
   use relative paths.

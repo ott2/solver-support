@@ -57,6 +57,15 @@ class GlobalState:
             self._model_registry = ModelRegistry()
         return self._model_registry
 
+    def set_model_registry(self, registry) -> None:
+        """Make ``registry`` the one the solvers read.
+
+        For a consumer that builds its own registry (with ``config_path=``, or
+        with entries added by ``register_model``). None drops it, so the next
+        use builds one from the wired default config again.
+        """
+        self._model_registry = registry
+
 
 # Global instance
 global_state = GlobalState()

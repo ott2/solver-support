@@ -34,6 +34,31 @@ returns its text). Writing it out wires nothing. The registry still raises until
 `set_default_config_path` names it, so a starter file on disk can never change
 what an unwired core does.
 
+**Entries added at run time.** A consumer that generates models as it goes can
+add them to a registry with `register_model(name, entry)` and
+`register_tune(solver, name, entry)`. `entry` is the mapping a YAML entry would
+hold, hyphenated keys included:
+
+```python
+registry = global_state.model_registry
+registry.register_model("gen-1a2b", {"path": "/abs/gen/1a2b.eprime",
+                                     "solver": "kissat", "proves-unsat": True})
+```
+
+Registering a name again with an equal entry does nothing; a different entry
+raises, so naming entries by content (a hash of the model file) never
+collides. A model needs a `path`, its `solver` must be known, and its name must
+be lowercase, since lookups lowercase their query. A registry you build
+yourself becomes the one the solvers read with
+`global_state.set_model_registry(registry)`; `None` drops it.
+
+Registration is **in memory only**. Another process, or a registry built
+later, sees an entry only if you persist it, for example by writing it to an
+override file and passing that as `ModelRegistry(config_path=...)`. Locking
+that file between processes is yours too. `finalize(proves_unsat=None)` keeps
+the value from the first `finalize`, so re-finalizing a summary does not need
+the entry again.
+
 ### 2. objective extraction (`solver_support.objective`)
 
 The core asks for a solution's objective at a few points but does not know how a

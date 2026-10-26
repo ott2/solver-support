@@ -389,6 +389,83 @@ class ModelRegistry(CommandBuilderMixin):
         
         raise ModelRegistryError(f"Cannot resolve model type: {model_type}")
     
+    def register_model(self, name: str, entry: Dict[str, Any]) -> None:
+        """Add a model entry at run time, as if it were in ``models:``.
+
+        For a consumer that generates models as it goes, so that each one's
+        runs are ordinary registry runs. ``entry`` is the mapping a YAML
+        entry would hold (``path``, ``solver``, ``proves-unsat``, ...); it is
+        copied. Idempotent: registering a name again with an equal entry does
+        nothing, and with a different one raises, so a consumer that names
+        entries by content never collides.
+
+        In memory only. Nothing is written, so another process (or a later
+        registry) sees the entry only if the consumer persists it itself, for
+        example as an override file passed as ``config_path``.
+
+        Raises:
+            ModelRegistryError: on a malformed name or entry, a ``solver`` the
+                registry does not know, a name another model has as an alias,
+                or a different entry under the same name.
+        """
+        self._check_entry_name(name, 'model')
+        entry = self._check_entry(entry, 'model', name)
+        if not isinstance(entry.get('path'), str) or not entry['path']:
+            raise ModelRegistryError(f"Model '{name}' needs a 'path'")
+        solver = entry.get('solver')
+        if solver is not None and solver not in self.config.get('solvers', {}):
+            raise ModelRegistryError(
+                f"Model '{name}' names an unknown solver: {solver}")
+        models = self.config.setdefault('models', {})
+        for other, config in models.items():
+            if other != name and name in [a.lower() for a in config.get('aliases', [])]:
+                raise ModelRegistryError(
+                    f"Model '{name}' is already an alias of '{other}'")
+        self._register(models, name, entry, 'model')
+
+    def register_tune(self, solver_name: str, name: str,
+                      entry: Dict[str, Any]) -> None:
+        """Add a tune preset to a solver at run time, as if it were in its
+        ``tune:``. Copied, and idempotent, as :meth:`register_model` is.
+
+        Raises:
+            ModelRegistryError: for an unknown solver, a malformed name or
+                entry, or a different entry under the same name.
+        """
+        solver_config = self.get_solver_config(solver_name)
+        self._check_entry_name(name, 'tune')
+        entry = self._check_entry(entry, 'tune', name)
+        tunes = solver_config.setdefault('tune', {})
+        self._register(tunes, name, entry, f"{solver_name} tune")
+
+    @staticmethod
+    def _check_entry_name(name: str, kind: str) -> None:
+        # Model lookup lowercases its query, so a name with capitals could
+        # never be found again.
+        if (not isinstance(name, str) or not name or name != name.lower()
+                or name != name.strip() or any(c.isspace() for c in name)):
+            raise ModelRegistryError(
+                f"A {kind} name must be a non-empty lowercase string without "
+                f"spaces: {name!r}")
+
+    @staticmethod
+    def _check_entry(entry: Dict[str, Any], kind: str, name: str) -> Dict[str, Any]:
+        if not isinstance(entry, dict):
+            raise ModelRegistryError(
+                f"The entry for {kind} '{name}' must be a mapping, not "
+                f"{type(entry).__name__}")
+        return copy.deepcopy(entry)
+
+    @staticmethod
+    def _register(table: Dict[str, Any], name: str, entry: Dict[str, Any],
+                  kind: str) -> None:
+        if name in table:
+            if table[name] == entry:
+                return
+            raise ModelRegistryError(
+                f"{kind} '{name}' is already registered with a different entry")
+        table[name] = entry
+
     def get_solver_for_model(self, model_path: Path) -> str:
         """
         Determine the appropriate solver for a model file.
