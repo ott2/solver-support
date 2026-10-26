@@ -69,14 +69,20 @@ fields. All times are seconds unless noted.
 
 ### Savile Row (Conjure / Essence Prime models)
 
-- **Shape**: a horizon scan — one `solving-horizon-N` phase per move budget.
-  Each horizon reaches the model as `letting <name> be N`, appended to the
-  instance for every name in the model's `horizon-params` (or its solver's).
-  These must be exactly the parameters the model declares, since Conjure
-  rejects a `letting` for one it lacks. A config without the key gets the
-  historical names, `noSteps` (Savile Row) or `maxMoves` + `horizon` (Conjure),
-  so models written for those keep working. Only `letting` lines for those names
-  are dropped from the instance first, not any line that mentions one.
+- **Shape**: for a horizon model, a horizon scan — one `solving-horizon-N`
+  phase per move budget. A model is a horizon model only if it (or its solver)
+  declares `horizon-params`. Each horizon reaches the model as
+  `letting <name> be N`, appended to the instance for every such name. These
+  must be exactly the parameters the model declares, since Conjure rejects a
+  `letting` for one it lacks. Only `letting` lines for those names are dropped
+  from the instance first, not any line that mentions one. The scan runs from
+  `max(startat, horizon-start)` to `stopat`, else `horizon-stop`; both bounds
+  default to 1..100.
+- **A model with no horizon** is tailored and solved once: one `solving` phase
+  (Conjure: `modelling`, `translate-param`, `solving`, `translate-solution`),
+  carrying the `.info` verdict below. That verdict decides the run like a
+  planner's, so with `proves-unsat` a refutation is `unsat`. A limit hit or a
+  kill is not, and `hlim` cannot arise.
 - **Which Savile Row entry**: Conjure only refines and translates. Each horizon
   is tailored and solved by the Savile Row entry the `conjure` config names
   (`savilerow: <entry>`), and an Essence run's `--tune` picks among that

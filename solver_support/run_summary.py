@@ -100,12 +100,12 @@ class PhaseResult:
 _NON_SOLVING_PHASES = frozenset({"translation", "modelling", "visualisation"})
 
 # Phases that prepare the input for a solver: a consumer's own translation of
-# the instance, Conjure's modelling, and Conjure's per-horizon parameter
-# translation. When one of these fails, the solver never saw the input, so
+# the instance, Conjure's modelling, and Conjure's parameter translation (per
+# horizon, or once for a model with no horizon). When one of these fails, the solver never saw the input, so
 # the run ended on an error and not on a search. Classified by name, as the
 # phases above are, so the rule also applies when a saved summary is
 # re-finalized.
-_SETUP_PHASES = frozenset({"translation", "modelling"})
+_SETUP_PHASES = frozenset({"translation", "modelling", "translate-param"})
 _SETUP_PHASE_PREFIXES = ("translate-param-",)
 
 

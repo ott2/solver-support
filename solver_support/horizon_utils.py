@@ -220,7 +220,7 @@ def horizon_search(runner: SolverRunner,
     return None
 
 
-def create_horizon_param_file(param_file: Path, output_dir: Path, n: int, logger: logging.Logger, runner: SolverRunner = None,
+def create_horizon_param_file(param_file: Path, output_dir: Path, n: Optional[int], logger: logging.Logger, runner: SolverRunner = None,
                               horizon_params: Optional[Sequence[str]] = None) -> Optional[Path]:
     """
     Create parameter file with base content, ready for horizon-specific constraints.
@@ -228,7 +228,7 @@ def create_horizon_param_file(param_file: Path, output_dir: Path, n: int, logger
     Args:
         param_file: Original parameter file
         output_dir: Output directory
-        n: Horizon value
+        n: Horizon value, or None for a model solved once (no horizon suffix)
         logger: Logger instance
         runner: SolverRunner instance for consistent naming (optional for backward compatibility)
         horizon_params: Names whose `letting` lines are dropped from the
@@ -238,7 +238,8 @@ def create_horizon_param_file(param_file: Path, output_dir: Path, n: int, logger
     Returns:
         Path to created parameter file, or None if creation failed
     """
-    n2 = f"{n:02d}"  # Zero-padded 2-digit number
+    # Zero-padded 2-digit horizon; a single solve gets no number
+    n2 = f"-{n:02d}" if n is not None else ""
     
     # Use consistent naming pattern with solution files if runner is provided
     if runner and hasattr(runner, 'summary'):
@@ -248,10 +249,10 @@ def create_horizon_param_file(param_file: Path, output_dir: Path, n: int, logger
         timestamp = runner.summary.timestamp
         tune = runner.summary.tune_slot
         tune_str = f"-{tune}" if tune else ""
-        horizon_param_file = output_dir / f"{instance_name}-{solver}{tune_str}-{model}-{timestamp}-{n2}.param"
+        horizon_param_file = output_dir / f"{instance_name}-{solver}{tune_str}-{model}-{timestamp}{n2}.param"
     else:
         # Fallback to old naming for backward compatibility
-        horizon_param_file = output_dir / f"{param_file.stem}-{n2}.param"
+        horizon_param_file = output_dir / f"{param_file.stem}{n2 or '-run'}.param"
     
     try:
         with open(param_file, 'r') as f:

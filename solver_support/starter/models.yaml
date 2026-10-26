@@ -36,17 +36,23 @@
 #     (docs/injection-api.md, seam 2).
 
 models:
-  # An Essence model. Conjure refines it to Essence Prime once (`modelling`),
-  # then for each horizon N = 2, 3, ... translates the instance, has Savile
-  # Row tailor and solve it (under the entry the `conjure` solver names), and
-  # translates the solution back. The horizon reaches the model as `letting horizon be N`, appended to
-  # the instance, for each name in `horizon-params`. These must be exactly the
-  # parameters the model declares (here `given horizon : int(1..100)`), because
-  # Conjure rejects a parameter the model does not have.
+  # An Essence model with a horizon. Conjure refines it to Essence Prime once
+  # (`modelling`), then for each horizon N = 2, 3, ... translates the instance,
+  # has Savile Row tailor and solve it (under the entry the `conjure` solver
+  # names), and translates the solution back. Declaring `horizon-params` is
+  # what makes a model a horizon model; a model without it is solved once
+  # (see `oneshot` below). The horizon reaches the model as `letting horizon be
+  # N`, appended to the instance, for each name in `horizon-params`. These
+  # must be exactly the parameters the model declares (here `given horizon :
+  # int(1..100)`), because Conjure rejects a parameter the model does not
+  # have. `horizon-start` and `horizon-stop` bound the scan: the start is a
+  # floor no caller can go below, the stop a default cap a caller may
+  # override. Without them the scan runs from 1 to 100.
   essence:
     path: models/model.essence
     solver: conjure
     horizon-params: [horizon]
+    horizon-start: 2
     description: Essence model, refined by Conjure and solved via Savile Row
 
   # A PDDL planning model: `path` is the domain file, and the instance (problem)
@@ -79,6 +85,18 @@ models:
     solver: savilerow
     horizon-params: [horizon]
     description: Essence Prime model, tailored and solved by Savile Row
+
+  # An Essence Prime model with no horizon: no `horizon-params`, so it is
+  # tailored and solved once, in a phase named `solving`. If the model is a
+  # complete decision procedure, its "no solution" is a proof, so it may claim
+  # `proves-unsat`: a run is then concluded unsat only when Savile Row's
+  # `.info` says the solver refuted the instance, never when it stopped at a
+  # limit. A horizon model never may.
+  oneshot:
+    path: models/oneshot.eprime
+    solver: savilerow
+    proves-unsat: true
+    description: Essence Prime model with no horizon, solved once
 
 solvers:
   fd:

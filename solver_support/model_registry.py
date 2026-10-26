@@ -21,6 +21,11 @@ import yaml
 #: those could be named; a new config should name its own.
 LEGACY_CONJURE_SAVILEROW = 'kissat'
 
+#: The horizons a horizon model's scan tries when neither the model, its
+#: solver nor the caller says otherwise (``horizon-start`` / ``horizon-stop``).
+DEFAULT_HORIZON_START = 1
+DEFAULT_HORIZON_STOP = 100
+
 
 class ModelRegistryError(Exception):
     """Exception raised for model registry errors."""
@@ -767,6 +772,22 @@ class ModelRegistry(CommandBuilderMixin):
             return None, None
         return model_config.get('status'), model_config.get('status-detail')
 
+    def _model_or_solver_value(self, model_type: str, key: str) -> Any:
+        """``key`` from the model's entry, else from its solver's, else None.
+        Resolves aliases and never raises."""
+        try:
+            _, model_config = self.resolve_model_variant(model_type)
+        except (ValueError, ModelRegistryError):
+            return None
+        value = model_config.get(key)
+        if value is None:
+            try:
+                value = self.get_solver_config(
+                    model_config.get('solver', '')).get(key)
+            except ModelRegistryError:
+                value = None
+        return value
+
     def get_horizon_params(self, model_type: str,
                            default: Sequence[str] = ()) -> List[str]:
         """The parameter names a horizon scan sets to the horizon for a model.
@@ -775,24 +796,52 @@ class ModelRegistry(CommandBuilderMixin):
         the instance, so these must be exactly the names the model declares:
         Conjure rejects a ``letting`` for a parameter the model does not have.
         Read from the model's ``horizon-params``, then its solver's, then
-        ``default`` - the route's own historical names, which configs written
-        before the key existed rely on. A single name may be given as a string.
-        Resolves aliases and never raises (an unknown model gets ``default``).
+        ``default``. A single name may be given as a string. Resolves aliases
+        and never raises.
+
+        A model is a horizon model only if this is non-empty
+        (:meth:`get_horizon_bounds`). The Savile Row and Conjure routes pass no
+        ``default``, so a model that declares nothing is solved once.
         """
-        try:
-            _, model_config = self.resolve_model_variant(model_type)
-        except (ValueError, ModelRegistryError):
-            return list(default)
-        names = model_config.get('horizon-params')
-        if names is None:
-            try:
-                names = self.get_solver_config(
-                    model_config.get('solver', '')).get('horizon-params')
-            except ModelRegistryError:
-                names = None
+        names = self._model_or_solver_value(model_type, 'horizon-params')
         if names is None:
             return list(default)
         return [names] if isinstance(names, str) else list(names)
+
+    def get_horizon_bounds(self, model_type: str) -> Optional[Tuple[int, int]]:
+        """``(start, stop)`` for a horizon model's scan, or None if it has no
+        horizon.
+
+        A model has a horizon if it (or its solver) declares
+        ``horizon-params``. ``horizon-start`` is the smallest horizon worth
+        trying, a floor on any start the caller asks for, and ``horizon-stop``
+        the highest tried unless the caller gives its own; each is read from
+        the model, then its solver, defaulting to
+        ``DEFAULT_HORIZON_START`` / ``DEFAULT_HORIZON_STOP``.
+
+        Raises:
+            ModelRegistryError: if a bound is not a positive integer, or the
+                start exceeds the stop.
+        """
+        if not self.get_horizon_params(model_type):
+            return None
+        bounds = []
+        for key, default in (('horizon-start', DEFAULT_HORIZON_START),
+                             ('horizon-stop', DEFAULT_HORIZON_STOP)):
+            value = self._model_or_solver_value(model_type, key)
+            if value is None:
+                value = default
+            if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+                raise ModelRegistryError(
+                    f"Model '{model_type}': {key} must be a positive integer, "
+                    f"not {value!r}")
+            bounds.append(value)
+        start, stop = bounds
+        if start > stop:
+            raise ModelRegistryError(
+                f"Model '{model_type}': horizon-start {start} exceeds "
+                f"horizon-stop {stop}")
+        return start, stop
 
     def get_model_default_tune(self, model_type: str) -> Optional[str]:
         """Return a model's preferred ``--tune`` preset, or None.

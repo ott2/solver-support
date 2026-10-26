@@ -26,6 +26,7 @@ models:
     detection_type: scored
     format-name: compact
     objective-in-solution: true
+    horizon-params: [noSteps]
     description: optimisation model carrying its objective in the solution
 
   # A PDDL model solved directly by Fast Downward. It proves unsat, but only
@@ -50,8 +51,7 @@ models:
     description: PDDL model pinned to a greedy FF search
 
   # Horizon models naming the parameter the scan sets to the horizon: one on
-  # the model itself, one inheriting it from its solver, and one with neither,
-  # which gets the route's historical names.
+  # the model itself, and one inheriting it from its solver.
   stepped:
     path: models/Stepped.eprime
     solver: srsat
@@ -61,6 +61,31 @@ models:
     path: models/MinionStepped.eprime
     solver: srminion
     description: horizon model inheriting its solver's horizon parameter
+  # A horizon model with a priori bounds on the horizons worth trying.
+  bounded:
+    path: models/Bounded.essence
+    solver: conjure
+    horizon-params: [horizon]
+    horizon-start: 2
+    horizon-stop: 12
+    description: horizon model that starts at 2 and stops at 12
+  # Models with no horizon: tailored and solved once, so a refutation is a
+  # proof. One opts out of its solver's horizon with an empty list.
+  oneshot:
+    path: models/OneShot.eprime
+    solver: srsat
+    proves-unsat: true
+    description: a complete model with no horizon
+  oneshotessence:
+    path: models/OneShot.essence
+    solver: conjure
+    proves-unsat: true
+    description: a complete Essence model with no horizon
+  minionoptout:
+    path: models/MinionOptOut.eprime
+    solver: srminion
+    horizon-params: []
+    description: no horizon, although its solver declares one
 
 solvers:
   # Conjure with no `savilerow:` key, the shape configs written before the key

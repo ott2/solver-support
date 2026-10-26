@@ -130,6 +130,9 @@ def test_incomplete_tunes_do_not_claim_proofs(starter):
 # The solver types whose backend records a solving-phase verdict, the only
 # thing a run's outcome can conclude `unsat` from (issue #6).
 _VERDICT_SOLVER_TYPES = {'fd', 'enhsp'}
+# Savile Row and Conjure record one only on a single solve: a model with no
+# horizon. A horizon model's per-horizon verdicts never decide the run.
+_SINGLE_SOLVE_VERDICT_SOLVER_TYPES = {'savilerow', 'conjure'}
 
 
 def test_proofs_are_claimed_only_where_a_verdict_is_recorded(starter):
@@ -142,8 +145,11 @@ def test_proofs_are_claimed_only_where_a_verdict_is_recorded(starter):
             tunes = [None, *starter.get_solver_config(solver).get('tune', {})]
             if any(starter.get_proves_unsat(model, tune=t, solver_name=solver)
                    for t in tunes):
-                assert starter.get_solver_type(solver) in _VERDICT_SOLVER_TYPES, (
-                    model, solver)
+                kind = starter.get_solver_type(solver)
+                if kind in _SINGLE_SOLVE_VERDICT_SOLVER_TYPES:
+                    assert starter.get_horizon_bounds(model) is None, (model, solver)
+                else:
+                    assert kind in _VERDICT_SOLVER_TYPES, (model, solver)
 
 
 def test_config_path_may_be_a_str(tmp_path):
@@ -174,7 +180,10 @@ def test_errors_say_what_to_do(tmp_path):
 
 
 def test_starter_models_name_their_horizon_parameter(starter):
-    """So a new user's model declares one `given horizon`, never the
-    historical names the fallback keeps for older configs."""
+    """So a new user's horizon model declares one `given horizon`, and the
+    starter shows a model with no horizon beside them."""
     for model in ('essence', 'eprime'):
         assert starter.get_horizon_params(model, ('legacy',)) == ['horizon']
+    assert starter.get_horizon_bounds('essence') == (2, 100)
+    assert starter.get_horizon_bounds('eprime') == (1, 100)
+    assert starter.get_horizon_bounds('oneshot') is None

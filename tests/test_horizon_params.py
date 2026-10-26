@@ -5,8 +5,8 @@ Each horizon N reaches the model as `letting <name> be N` appended to the
 instance. The names used to be hardcoded, `noSteps` for Savile Row and both
 `maxMoves` and `horizon` for Conjure. Conjure rejects a `letting` for a
 parameter the model does not declare, so every Essence model had to declare
-both. They are now the registry's `horizon-params`, with the historical names
-kept as the fallback for configs written before the key existed.
+both. They are now the registry's `horizon-params`, and since issue #10 a
+model that declares none has no horizon at all: it is solved once.
 """
 
 import logging
@@ -31,12 +31,43 @@ class TestRegistry:
     def test_model_inherits_its_solvers(self, fixture_registry):
         assert fixture_registry.get_horizon_params('minionstepped', ('noSteps',)) == ['t']
 
-    def test_neither_falls_back_to_the_routes_default(self, fixture_registry):
+    def test_neither_gets_the_callers_default(self, fixture_registry):
         assert fixture_registry.get_horizon_params(
-            'scored', ('maxMoves', 'horizon')) == ['maxMoves', 'horizon']
+            'oneshot', ('maxMoves', 'horizon')) == ['maxMoves', 'horizon']
+        assert fixture_registry.get_horizon_params('oneshot') == []
 
     def test_unknown_model_gets_the_default(self, fixture_registry):
         assert fixture_registry.get_horizon_params('nosuch', ('noSteps',)) == ['noSteps']
+
+    def test_an_empty_list_opts_out_of_the_solvers(self, fixture_registry):
+        assert fixture_registry.get_horizon_params('minionoptout') == []
+
+
+class TestBounds:
+
+    def test_a_model_without_a_horizon_has_no_bounds(self, fixture_registry):
+        for model in ('oneshot', 'minionoptout', 'nosuch'):
+            assert fixture_registry.get_horizon_bounds(model) is None
+
+    def test_a_horizon_model_gets_the_global_default(self, fixture_registry):
+        assert fixture_registry.get_horizon_bounds('stepped') == (1, 100)
+        assert fixture_registry.get_horizon_bounds('minionstepped') == (1, 100)
+
+    def test_a_model_may_bound_its_own_scan(self, fixture_registry):
+        assert fixture_registry.get_horizon_bounds('bounded') == (2, 12)
+
+    @pytest.mark.parametrize('entry, match', [
+        ({'horizon-start': 0}, 'positive'),
+        ({'horizon-stop': 'ten'}, 'positive'),
+        ({'horizon-start': True}, 'positive'),
+        ({'horizon-start': 5, 'horizon-stop': 4}, 'exceeds'),
+    ])
+    def test_malformed_bounds_raise(self, fixture_registry, entry, match):
+        from solver_support.model_registry import ModelRegistryError
+        fixture_registry.register_model('bad', {
+            'path': 'm.eprime', 'solver': 'srsat', 'horizon-params': ['t'], **entry})
+        with pytest.raises(ModelRegistryError, match=match):
+            fixture_registry.get_horizon_bounds('bad')
 
 
 class TestInstanceRewrite:
@@ -80,9 +111,9 @@ class TestSolverWritesTheConfiguredNames:
 
     @pytest.mark.parametrize('cls, model, expected', [
         (SavileRowSolver, 'stepped', ['steps']),
-        (SavileRowSolver, 'scored', ['noSteps']),             # no key: legacy
+        (SavileRowSolver, 'oneshot', []),             # no key: no horizon
         (ConjureSolver, 'stepped', ['steps']),
-        (ConjureSolver, 'scored', ['maxMoves', 'horizon']),   # no key: legacy
+        (ConjureSolver, 'oneshot', []),
     ])
     def test_names(self, fixture_registry, tmp_path, cls, model, expected):
         solver = self._solver(cls, model, tmp_path)

@@ -143,12 +143,17 @@ the engine names, because a UPF command embeds its engine (`-s fast-downward`) a
 would otherwise be parsed by the FD extractor, which can't read upfplan's plan format.
 `enhsp` must be matched before the `fd`/`symk` branch for the same reason.
 
-**The horizon parameter is the registry's, not the core's.** A horizon scan
-appends `letting <name> be N` for each name in the model's (or its solver's)
-`horizon-params`. The historical names, `noSteps` and `maxMoves` + `horizon`,
-are one consumer's vocabulary. They survive only as the fallback for configs written
-before the key existed (`DEFAULT_HORIZON_PARAMS`, `LEGACY_HORIZON_PARAMS`). Do
-not add another name to that fallback; add the key to the config instead. The
+**The horizon is the registry's, not the core's.** A model is a horizon model
+only if it (or its solver) declares `horizon-params`; a scan appends
+`letting <name> be N` for each name. A model that declares none (or `[]`) is
+tailored and solved **once**, in a phase named `solving`, so its `.info` verdict
+decides the run and a complete model's refutation can be `unsat`. The scan's
+bounds are the model's (or solver's) `horizon-start` (a floor on any `startat`)
+and `horizon-stop` (the cap unless the caller passes `stopat`), defaulting to
+1..100 (`get_horizon_bounds`). Conjure has no built-in floor of 2 any more.
+There is no fallback to the historical names (`noSteps`, `maxMoves` +
+`horizon`): one consumer's vocabulary, which `LEGACY_HORIZON_PARAMS` keeps only
+for stripping an instance's own lettings when a caller names none. The
 same goes for which Savile Row entry solves each horizon. A `conjure` entry
 names it with `savilerow:` (`get_conjure_savilerow`), and a Savile Row scan
 uses the run's own solver. `kissat` survives only as the last fallback
@@ -177,7 +182,7 @@ non-zero. Exit codes cannot decide this in either direction — a solver given i
 own time limit stops *itself* and exits 0, so every phase of a fruitless run can
 succeed. `unsat` is only ever concluded when the caller passes
 `proves_unsat=True` (from the registry's `get_proves_unsat`, which is model AND
-tune — a tune preset may switch it off, never on); a bounded CP model
+tune — a tune preset may switch it off, never on); a CP model with a horizon
 *cannot* prove unsatisfiability, and `hlim` is never promoted to a proof however
 complete the model, since refuting horizons 1..N says nothing about N+1.
 `unsat` also needs the `solving` phase to have recorded an `unsat` `verdict`,
