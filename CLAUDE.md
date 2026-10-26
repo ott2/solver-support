@@ -226,6 +226,13 @@ that discards every statistic. Size it with `savilerow_backstop`; to hold a real
 wall-clock budget, shrink the in-band pair instead. The core picks no reserve
 policy — only the caller knows what tailoring will cost.
 
+**Solution sets are a fact of the argv.** `get_preserves_solutions(solver, tune)`
+says whether enumerating or counting solutions measures the model. It is read
+from the Savile Row args the tune builds (`savilerow_args_preserve_solutions`):
+only `-S0` with no `-S1`/`-S2`/`-remove-redundant-vars`/`-aux-non-functional`/
+`-var-sym-breaking` anywhere. A tune's `preserves-solutions: false` takes the claim
+away, never grants it; every non-Savile Row solver, Conjure included, says False.
+
 **Consumer-owned data goes in `extra`, never a declared field.** `RunSummary` and
 `PhaseResult` each carry an `extra` dict for data the core cannot interpret. Declaring
 such a field would grow a consumer's vocabulary into a domain-agnostic record — which

@@ -50,6 +50,7 @@ from .model_registry import (
 )
 from .command_builders import (
     savilerow_backstop, SAVILEROW_FLUSH_GRACE, fd_backstop, FD_EXIT_GRACE,
+    savilerow_args_preserve_solutions, SAVILEROW_SOLUTION_CHANGING_OPTIONS,
 )
 
 # --- run configuration singleton ---
@@ -121,6 +122,8 @@ __all__ = [
     "savilerow_backstop",
     "SAVILEROW_FLUSH_GRACE",
     "fd_backstop",
+    "savilerow_args_preserve_solutions",
+    "SAVILEROW_SOLUTION_CHANGING_OPTIONS",
     "FD_EXIT_GRACE",
     # run config
     "global_state",

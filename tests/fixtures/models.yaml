@@ -156,6 +156,20 @@ solvers:
           - "-run-solver"
           - "-sat"
         description: SAT backend
+      exact:
+        sat_args:
+          - "-run-solver"
+          - "-sat"
+          - "-S0"
+        description: SAT backend, keeping the solution set (-S0)
+      exact-withdrawn:
+        sat_args:
+          - "-run-solver"
+          - "-sat"
+          - "-S0"
+        # Takes the claim away (an option known to change solutions, say).
+        preserves-solutions: false
+        description: -S0, but this config withdraws the claim
 
   srminion:
     solver_type: savilerow

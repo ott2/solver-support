@@ -30,7 +30,8 @@ class ModelRegistryError(Exception):
 # Imported after ModelRegistryError so command_builders (which raises it) can
 # back-import it without a cycle; the package __init__ always imports this
 # module before anything reaches command_builders.
-from .command_builders import CommandBuilderMixin
+from .command_builders import (CommandBuilderMixin,
+                               savilerow_args_preserve_solutions)
 
 
 # --- consumer packaging injection (registered once by a consumer) ---
@@ -722,6 +723,34 @@ class ModelRegistry(CommandBuilderMixin):
         tune = tune or model_config.get('tune')
         name = tune if tune in tunes else solver_config.get('default_tune')
         return bool(tunes.get(name, {}).get('proves-unsat', True))
+
+    def get_preserves_solutions(self, solver_name: str, tune: Optional[str] = None,
+                                extra_options: Optional[Sequence[str]] = None) -> bool:
+        """Whether a run under this solver and tune keeps the model's solution
+        set, so that enumerating or counting solutions measures the model.
+
+        Read from the Savile Row arguments the tune builds, plus
+        ``extra_options`` (a run's ``--options``), by
+        :func:`savilerow_args_preserve_solutions`: only ``-S0`` qualifies. A
+        tune may say ``preserves-solutions: false`` to take the claim away,
+        never to grant it. Resolved as the builder resolves it, so the answer
+        is about the argv a run would get. Conjure runs are answered from the
+        Savile Row entry they delegate to; Conjure's own refinement is not
+        checked, so they answer False, as does every other solver type.
+        """
+        try:
+            if self.get_solver_type(solver_name) != 'savilerow':
+                return False
+            solver_config = self.get_solver_config(solver_name)
+        except ModelRegistryError:
+            return False
+        arg_key = f"{solver_config.get('backend', 'sat')}_args"
+        name = self._effective_tune(solver_config, tune, arg_key)
+        preset = solver_config.get('tune', {}).get(name, {})
+        if preset.get('preserves-solutions') is False:
+            return False
+        args = list(preset.get(arg_key, [])) + list(extra_options or [])
+        return savilerow_args_preserve_solutions(args)
 
     def get_model_status(self, model_type: str) -> Tuple[Optional[str], Optional[str]]:
         """Return a model's health status and an optional detail string.

@@ -203,3 +203,15 @@ solvers:
           - "-sat-family"
           - "kissat"
         description: Savile Row driving kissat
+      # Savile Row's default (-S1) may delete unused variables and add
+      # auxiliaries, which can change the number of solutions. To enumerate or
+      # count solutions, use a tune that passes -S0:
+      # `get_preserves_solutions` reads the args and answers True only then.
+      exact:
+        sat_args:
+          - "-run-solver"
+          - "-sat"
+          - "-sat-family"
+          - "kissat"
+          - "-S0"
+        description: Savile Row driving kissat, keeping the solution set (-S0)

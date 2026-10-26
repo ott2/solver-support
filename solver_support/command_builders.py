@@ -85,6 +85,31 @@ def fd_backstop(timeout: int, translate_allowance: Optional[int] = None,
     return timeout + allowance + grace
 
 
+#: Savile Row options that may change the number of solutions, per its
+#: ``-help`` (1.11.1): ``-S1`` (the default) is ``-remove-redundant-vars`` plus
+#: ``-aux-non-functional``, and ``-S2`` adds ``-var-sym-breaking``.
+SAVILEROW_SOLUTION_CHANGING_OPTIONS = frozenset({
+    '-S1', '-S2', '-remove-redundant-vars', '-aux-non-functional',
+    '-var-sym-breaking'})
+
+
+def savilerow_args_preserve_solutions(args) -> bool:
+    """Whether Savile Row run with ``args`` keeps the model's solution set.
+
+    Savile Row's default, ``-S1``, may delete unused variables and add
+    auxiliaries that the ``find`` variables do not determine, so the number
+    of solutions can change; ``-S0`` switches every such optimisation off.
+    True only if ``-S0`` is given and nothing in
+    :data:`SAVILEROW_SOLUTION_CHANGING_OPTIONS` appears anywhere, so the
+    answer does not depend on how Savile Row orders conflicting flags.
+    Options passed through to the backend (``-solver-options``) are not
+    read; a tune whose backend options change solutions should say
+    ``preserves-solutions: false``.
+    """
+    args = [str(a) for a in args]
+    return '-S0' in args and not SAVILEROW_SOLUTION_CHANGING_OPTIONS.intersection(args)
+
+
 class CommandBuilderMixin:
     """The ``build_*_command`` methods mixed into :class:`ModelRegistry`."""
 
