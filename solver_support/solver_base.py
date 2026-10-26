@@ -40,12 +40,49 @@ class Solver(ABC):
         """
         explicit = getattr(global_state, 'tune', None)
         if explicit:
+            # Rejected here as well as in the builders, so no backend can
+            # swallow the error and run its default under the name asked for.
+            self._require_known_tune(explicit)
             return explicit
         try:
-            return global_state.model_registry.get_model_default_tune(
-                self.runner.summary.model)
+            registry = global_state.model_registry
+            model = self.runner.summary.model
+            pinned = registry.get_model_default_tune(model)
+            if pinned and not self._knows_tune(pinned):
+                # The pin is the model's preference for its own solver. Under
+                # another solver that lacks it, the solver's default applies;
+                # under its own, an unknown pin is a typo and raises below.
+                _, model_config = registry.resolve_model_variant(model)
+                own = model_config.get('solver')
+                run = self._run_solver_name()
+                if own and (registry.get_tune_backend(own)
+                            != registry.get_tune_backend(run)):
+                    self.logger.debug(
+                        f"Model {model}'s tune '{pinned}' is not a "
+                        f"{self._run_solver_name()} tune; using its default")
+                    return None
         except Exception:
             return None
+        self._require_known_tune(pinned)
+        return pinned
+
+    def _run_solver_name(self) -> Optional[str]:
+        """The registry solver whose tunes this run's ``--tune`` selects."""
+        return getattr(self, 'solver_name', None) or getattr(
+            getattr(self.runner, 'summary', None), 'solver', None)
+
+    def _knows_tune(self, tune: str) -> bool:
+        solver = self._run_solver_name()
+        try:
+            return global_state.model_registry.is_valid_tune(solver, tune)
+        except Exception:
+            # An unregistered solver: nothing to check against.
+            return True
+
+    def _require_known_tune(self, tune: Optional[str]) -> None:
+        if tune and not self._knows_tune(tune):
+            global_state.model_registry.require_known_tune(
+                self._run_solver_name(), tune)
 
     @abstractmethod
     def solve(self, param_file: Path, **kwargs) -> Optional[Path]:

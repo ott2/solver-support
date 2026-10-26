@@ -928,17 +928,40 @@ class ModelRegistry(CommandBuilderMixin):
         """
         return tune in self.get_valid_tunes(solver_name)
 
+    def require_known_tune(self, solver_name: str, tune: Optional[str]) -> None:
+        """Raise unless ``tune`` is None or a preset of the solver's tune backend.
+
+        The builders call this before resolving, so a misspelt tune is an
+        error rather than a run of ``default_tune`` recorded under the name
+        that was asked for, which would make a comparison between tunes
+        silently wrong. A known tune that lacks the backend's key (a
+        regime-only preset, say) still falls back, since that is a
+        configuration choice, not a typo.
+
+        Raises:
+            ModelRegistryError: for an unknown tune, or an unknown solver.
+        """
+        if not tune:
+            return
+        valid = self.get_valid_tunes(solver_name)
+        if tune not in valid:
+            raise ModelRegistryError(
+                f"Unknown tune '{tune}' for solver '{solver_name}' "
+                f"(known: {', '.join(valid) or 'none'})")
+
     @staticmethod
     def _effective_tune(solver_config: Dict[str, Any], tune: Optional[str],
                         key: str) -> Optional[str]:
         """Resolve the tune name whose preset carries ``key``, else default_tune.
 
-        The lenient lookup shared by the ``build_*_command`` / ``get_upf_*``
-        helpers: an explicit ``tune`` wins only if its preset actually supplies
-        this backend's key (e.g. ``'search'``, ``'planner'``, ``'engine'``,
-        ``'fd_search'``, or a savilerow ``sat_args``/``minion_args`` key);
-        otherwise fall back to the solver's ``default_tune``. Callers then read
-        the value out of the resolved preset themselves.
+        Shared by the ``build_*_command`` / ``get_upf_*`` helpers: an explicit
+        ``tune`` wins only if its preset actually supplies this backend's key
+        (e.g. ``'search'``, ``'planner'``, ``'engine'``, ``'fd_search'``, or a
+        savilerow ``sat_args``/``minion_args`` key); otherwise fall back to the
+        solver's ``default_tune``. The argv-building callers reject an unknown
+        tune first (:meth:`require_known_tune`), so only a known preset without
+        this key falls back; the query helpers built on this stay lenient.
+        Callers then read the value out of the resolved preset themselves.
         """
         tunes = solver_config.get('tune', {})
         if tune and key in tunes.get(tune, {}):
@@ -962,6 +985,7 @@ class ModelRegistry(CommandBuilderMixin):
         ``engine_name``; the caller then applies its own hardcoded default.
         """
         solver_config = self.get_solver_config(solver_name)
+        self.require_known_tune(solver_name, tune)
         tunes = solver_config.get('tune', {})
         name = self._effective_tune(solver_config, tune, 'engine')
         return tunes.get(name, {}).get('engine') or solver_config.get('engine_name')
@@ -979,6 +1003,7 @@ class ModelRegistry(CommandBuilderMixin):
         route). Returns None for solvers that pin no search (enhsp/symk ignore it).
         """
         solver_config = self.get_solver_config(solver_name)
+        self.require_known_tune(solver_name, tune)
         tunes = solver_config.get('tune', {})
         name = self._effective_tune(solver_config, tune, 'fd_search')
         return tunes.get(name, {}).get('fd_search') or solver_config.get('fd_search')

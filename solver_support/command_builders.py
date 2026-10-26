@@ -245,8 +245,9 @@ class CommandBuilderMixin:
                 ``default_tune`` (kissat: 'safe'/'bare'/'srdefault'/'gac';
                 minion: 'bare'). The preset supplies this backend's arg-set,
                 under the key ``<backend>_args`` - sat_args, minion_args,
-                ortools_args, and so on. A name that is unknown or lacks this
-                backend's arg key falls back to ``default_tune``. This is the
+                ortools_args, and so on. A known name that lacks this backend's
+                arg key falls back to ``default_tune``; an unknown name raises.
+                This is the
                 savilerow arm of the same ``--tune`` dial fd uses for its search
                 presets.
 
@@ -254,23 +255,25 @@ class CommandBuilderMixin:
             Complete command as list of strings.
 
         Raises:
-            ModelRegistryError: If savilerow solver not found in config, if the
-                config names a backend that is not in ``SAVILEROW_BACKENDS``, or
+            ModelRegistryError: If savilerow solver not found in config, if
+                ``tune`` is not one of its presets, if the config names a backend that is not in ``SAVILEROW_BACKENDS``, or
                 if the resolved tune has no arg-set for this backend.
         """
         solver_config = self.get_solver_config(solver_name)
+        # A misspelt tune is an error for the same reason as a misspelt backend
+        # below: the run would succeed under a configuration it was not asked
+        # for, and the record would name the one it was.
+        self.require_known_tune(solver_name, tune)
 
         # The backend solver is declared by the config, not passed in: `--solver
         # minion` selects the minion backend config. This replaced the old
         # cross-cutting `--minion` boolean. Absent means the kissat SAT backend,
         # which is what every pre-existing config relies on.
         #
-        # An unrecognised name is an error rather than a fallback. The lenient
-        # `_effective_tune` lookup below can afford to shrug at a typo because a
-        # wrong tune still runs the right solver; a typo'd backend would silently
-        # build the SAT arm's argv - a run that succeeds while comparing the wrong
-        # solver, which is worse than no run at all. Same reasoning as
-        # `is_valid_tune`, applied one level up.
+        # An unrecognised name is an error rather than a fallback: a typo'd
+        # backend would silently build the SAT arm's argv - a run that succeeds
+        # while comparing the wrong solver, which is worse than no run at all.
+        # Same reasoning as `require_known_tune`, applied one level up.
         backend = solver_config.get('backend', 'sat')
         spec = self.SAVILEROW_BACKENDS.get(backend)
         if spec is None:
@@ -301,9 +304,9 @@ class CommandBuilderMixin:
         # Choose the argument set from the active tune preset. Each backend reads
         # its own key, named after it: sat_args, minion_args, ortools_args, and so
         # on. Deriving the name rather than tabulating it is what lets a new
-        # backend arrive without touching this line. A tune that is unknown or
-        # lacks this backend's key falls back to default_tune (the lenient
-        # behaviour the fd builder uses too). The model-default tune is resolved
+        # backend arrive without touching this line. A known tune that lacks this
+        # backend's key falls back to default_tune (as in the fd builder); an
+        # unknown one was rejected above. The model-default tune is resolved
         # by the caller, so `tune` here is already the effective name.
         arg_key = f'{backend}_args'
         tunes = solver_config.get('tune', {})
@@ -404,6 +407,7 @@ class CommandBuilderMixin:
                 usable tune preset for the requested mode.
         """
         solver_config = self.get_solver_config(solver_name)
+        self.require_known_tune(solver_name, tune)
 
         # Add timeout argument
         if timeout is None:
@@ -429,8 +433,9 @@ class CommandBuilderMixin:
         else:
             # Standard mode: the post-file --search string from a tune preset,
             # e.g. fd --search-time-limit <timeout> domain.pddl problem.pddl
-            # --search "astar(blind())". A requested tune that doesn't exist or
-            # carries no search string (e.g. soup) falls back to default_tune.
+            # --search "astar(blind())". A requested tune that carries no search
+            # string (e.g. soup) falls back to default_tune; an unknown one was
+            # rejected above.
             name = self._effective_tune(solver_config, tune, 'search')
             search = tunes.get(name, {}).get('search')
             if not search:
@@ -482,6 +487,7 @@ class CommandBuilderMixin:
             ModelRegistryError: If the solver has no usable planner tune.
         """
         solver_config = self.get_solver_config(solver_name)
+        self.require_known_tune(solver_name, tune)
         tunes = solver_config.get('tune', {})
         name = self._effective_tune(solver_config, tune, 'planner')
         planner = tunes.get(name, {}).get('planner')

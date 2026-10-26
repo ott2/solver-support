@@ -62,8 +62,8 @@ class FastDownwardSolver(Solver):
         # Optional --tune preset from the CLI, held in global_state like the
         # savilerow extra-option flags. A single flag covers both engines;
         # build_fd_command resolves it against the active solver's tune presets
-        # (fd: blind/hmax/ff/lmcut/verbose; symk: fw/bw/bd) and falls back to the
-        # solver's default_tune if the name is not valid for this solver. With no
+        # (fd: blind/hmax/ff/lmcut/verbose; symk: fw/bw/bd); a name that is not
+        # one of them raises (issue #13). With no
         # --tune, honour a model-pinned tune (models.yaml `tune:`) - the same
         # resolution the upf/horizon paths use - so a model can select a working
         # non-default config as its default.

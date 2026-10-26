@@ -119,9 +119,14 @@ Roughly a pipeline, bottom-up:
 resolution shared by every backend: an explicit CLI `--tune` (in `global_state`) wins,
 else the model's pinned `tune:` from `models.yaml`, else the backend's `default_tune`
 (resolved inside the builder). Backends must call it rather than re-deriving.
-`ModelRegistry._effective_tune` is the *lenient* lookup builders use — an unknown or
-key-less tune silently falls back to `default_tune`, which is why `is_valid_tune()`
-exists for a CLI to turn a typo into an explicit error before that leniency hides it.
+**An unknown tune raises** `ModelRegistryError` (`require_known_tune`), both there
+and in every argv builder and `get_upf_*` lookup: a fallback would run the default
+under the name asked for, so a tune grid's typo silently duplicates the default
+cell. Only a *known* tune lacking the backend's key (a regime-only preset) falls
+back to `default_tune` (`ModelRegistry._effective_tune`). A model's pinned `tune:`
+that the run's solver lacks is dropped only under another solver (it is the
+model's preference for its own); the query helpers (`get_tune_regime`,
+`get_declaring_tune`, `get_preserves_solutions`) stay lenient and never raise.
 
 **A Savile Row backend is one row in `SAVILEROW_BACKENDS`, and nothing else.** The
 table in `command_builders.py` holds the whole description of each backend (`sat`,

@@ -39,7 +39,7 @@ class EnhspSolver(Solver):
 
         # Optional --tune preset from the CLI, held in global_state like the other
         # backends. build_enhsp_command resolves it against the active solver's
-        # planner presets (hmrp/hadd/hrmax/blind) and falls back to default_tune.
+        # planner presets (hmrp/hadd/hrmax/blind); an unknown name raises.
         # With no --tune, honour a model-pinned tune (models.yaml `tune:`, e.g.
         # pddlscorednoaxiom pins blind because enhsp's default hmrp/hrmax heuristics
         # NPE on its conditional effects) - the same resolution the upf/horizon
