@@ -57,9 +57,10 @@ class TestUnsolvedExit12:
         # EHC is incomplete: it gives up, it does not refute
         ('fd-ehc', 'ehc(ff())',
          {'verdict': 'unknown', 'verdict_reason': 'incomplete'}),
-        # SymK prints no exhaustion line; its bound sweep reaching infinity is one
+        # SymK prints no exhaustion line; its bound sweep reaching infinity is
+        # one, but no SymK search is on the allowlist (issue #9)
         ('symk-exhaust', 'sym_bd()',
-         {'verdict': 'unsat', 'verdict_reason': 'exhausted'}),
+         {'verdict': 'unknown', 'verdict_reason': 'unverified-search'}),
         ('symk-bound', 'sym_bd(bound=2)',
          {'verdict': 'unknown', 'verdict_reason': 'bounded'}),
     ])

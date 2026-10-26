@@ -76,9 +76,12 @@ class TestFastDownwardViaUpf:
             'verdict': 'error', 'verdict_reason': 'unsupported'}
 
     def test_symk_reads_as_fast_downward(self):
+        """No SymK search is on the allowlist (issue #9)."""
         doc = _file(engine='symk')
         assert _verdict(_stats(doc, _read('fd/symk-exhaust.stdout'))) == {
-            'verdict': 'unsat', 'verdict_reason': 'exhausted'}
+            'verdict': 'unknown', 'verdict_reason': 'unverified-search'}
+        assert _verdict(_stats(doc, _read('fd/symk-bound.stdout'))) == {
+            'verdict': 'unknown', 'verdict_reason': 'bounded'}
 
     def test_no_exit_code_anywhere_gives_no_verdict(self):
         doc = _file(engine='fast-downward')

@@ -183,7 +183,8 @@ because `failed` is also what a crash looks like: **no verdict, no `unsat`**
 (`fd_verdict`) and ENHSP (`enhsp_verdict`, which must read stderr — ENHSP exits
 0 after a missing input file) record one. Their `exhausted` is an
 **allowlist** of checked blind searches (FD: only `astar`/`blind` calls in the
-logged search; ENHSP: `blind` under `wastar`/`gbfs` with AIBR preprocessing
+logged search, so no SymK `sym_*` search, whose final infinite `BOUND` is its
+exhaustion line; ENHSP: `blind` under `wastar`/`gbfs` with AIBR preprocessing
 off); anything else is `unverified-search`, unless the run's tune declares an
 explicit `proves-unsat: true` and exactly its search ran (`get_declaring_tune`;
 `exhausted-declared`, which never overrides a bound, known-unsafe pruning or a

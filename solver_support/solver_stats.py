@@ -728,7 +728,9 @@ class SolverStatsExtractor:
         ``exhausted`` it is this function's own reading of a pre-26.6 planner
         whose search ran out of states. That is sound only if the search is
         complete and prunes nothing it should not, so it is given only to a
-        search on an allowlist: A* with the blind heuristic. An evaluator whose
+        search on an allowlist: A* with the blind heuristic. SymK's ending
+        (its last ``BOUND`` reaching infinity) is judged the same way, and no
+        SymK search is on the list yet. An evaluator whose
         dead ends are unreliable on this task (``ff`` on a task with axioms,
         ``cg`` on any) gives ``unknown`` / ``unsafe-pruning``; any other search
         gives ``unknown`` / ``unverified-search``. Without a reason, ``unsat``
@@ -792,7 +794,19 @@ class SolverStatsExtractor:
         else:
             search = ''
         bounded = bool(_FD_BOUND_ARG_RE.search(search))
-        if _FD_EXHAUSTED_LINE in stdout:
+        exhausted = _FD_EXHAUSTED_LINE in stdout
+        if not exhausted:
+            # SymK prints no exhaustion line. Its last bound reaching infinity
+            # is one, judged below like Fast Downward's: no `sym_*` search is
+            # on the allowlist (docs/unsat-soundness.md).
+            bounds = _SYMK_BOUND_RE.findall(stdout)
+            if bounds:
+                lower, upper = (int(b) for b in bounds[-1])
+                if lower >= upper:
+                    if upper < _SYMK_INFINITY:
+                        return 'unknown', 'bounded'
+                    exhausted = True
+        if exhausted:
             if bounded:
                 return 'unknown', 'bounded'
             if SolverStatsExtractor._fd_pruned_unsafely(search, stdout):
@@ -803,14 +817,7 @@ class SolverStatsExtractor:
             if SolverStatsExtractor._fd_ran_declared(search, logged, declared_search):
                 return 'unsat', 'exhausted-declared'
             return 'unknown', 'unverified-search'
-        bounds = _SYMK_BOUND_RE.findall(stdout)
-        if bounds:
-            lower, upper = (int(b) for b in bounds[-1])
-            if lower >= upper:
-                if upper >= _SYMK_INFINITY:
-                    return 'unsat', 'exhausted'
-                return 'unknown', 'bounded'
-        # Neither line: an incomplete search gave up (EHC prints `No solution -
+        # Neither ending: an incomplete search gave up (EHC prints `No solution -
         # FAILED`), or - from 26.6, where a complete search exits 11 or 13 - a
         # search the planner itself judged incomplete or unsafely pruned
         # (`Search terminated without finding a plan!`).
@@ -1037,9 +1044,9 @@ class SolverStatsExtractor:
 
         ``declared_search`` / ``declared_engine`` come from a registry tune
         that declares ``proves-unsat: true`` (``get_declaring_tune``): it
-        vouches for the Fast Downward search it passed, or for the ENHSP engine
-        it chose, so that exact configuration's exhaustion is ``unsat`` /
-        ``exhausted-declared``.
+        vouches for the Fast Downward search it passed, or, when it passed
+        none, for the engine it chose (ENHSP, SymK), so that exact
+        configuration's exhaustion is ``unsat`` / ``exhausted-declared``.
 
         The returned stats replace the text-derived ones of
         :meth:`extract_upf_stats` where they overlap.
@@ -1109,11 +1116,13 @@ class SolverStatsExtractor:
             stats.update(SolverStatsExtractor.enhsp_verdict(
                 0 if code is None else int(code), engine_log, stderr,
                 engine_command))
-            # ENHSP logs no configuration, and UPF builds its argv from the
-            # engine, so the vouching binds to the engine the tune chose.
-            if (stats.get('verdict_reason') == 'unverified-search'
-                    and declared_engine and engine == declared_engine):
-                stats.update(verdict='unsat', verdict_reason='exhausted-declared')
+        # Where the tune names no search (ENHSP, which logs no configuration;
+        # a symk engine, which takes no --fd-search), UPF builds the engine's
+        # argv itself, so the vouching binds to the engine the tune chose.
+        if (stats.get('verdict_reason') == 'unverified-search'
+                and declared_search is None
+                and declared_engine and engine == declared_engine):
+            stats.update(verdict='unsat', verdict_reason='exhausted-declared')
         return stats
 
     @staticmethod

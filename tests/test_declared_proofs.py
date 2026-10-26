@@ -102,6 +102,47 @@ class TestFastDownward:
             'verdict_reason'] == 'exhausted-declared'
 
 
+class TestSymk:
+    """Issue #9: SymK's ending (its last BOUND reaching infinity) is judged like
+    Fast Downward's exhaustion line, and no SymK search is on the allowlist."""
+
+    @pytest.mark.parametrize('search', [
+        'sym_fw()', 'sym_bw()', 'sym_bd()', 'sym_fw(mutex_type=MUTEX_NOT)'])
+    def test_no_symk_search_is_checked(self, search):
+        log = _with_search(search, _log('fd/symk-exhaust.stdout'))
+        assert _fd(log, None) == {
+            'verdict': 'unknown', 'verdict_reason': 'unverified-search'}
+
+    def test_the_declared_search_is_a_proof(self):
+        log = _with_search('sym_fw()', _log('fd/symk-exhaust.stdout'))
+        assert _fd(log, 'sym_fw()') == {
+            'verdict': 'unsat', 'verdict_reason': 'exhausted-declared'}
+
+    def test_a_different_search_ran(self):
+        log = _with_search('sym_bw()', _log('fd/symk-exhaust.stdout'))
+        assert _fd(log, 'sym_fw()')['verdict_reason'] == 'unverified-search'
+
+    def test_a_bound_is_never_overridden(self):
+        assert _fd(_log('fd/symk-bound.stdout'), 'sym_bd(bound=2)') == {
+            'verdict': 'unknown', 'verdict_reason': 'bounded'}
+
+    def test_a_bound_in_the_search_is_never_overridden(self):
+        """A bound= the log's BOUND lines do not reflect still bounds the proof."""
+        log = _with_search('sym_bd(bound=2)', _log('fd/symk-exhaust.stdout'))
+        assert _fd(log, 'sym_bd(bound=2)')['verdict_reason'] == 'bounded'
+
+    def test_via_upf_the_engine_vouches(self):
+        doc = {'schema': UPF_RESULT_SCHEMA, 'finished': True,
+               'plan_found': False, 'engine': 'symk'}
+        log = _log('fd/symk-exhaust.stdout')
+        vouched = SolverStatsExtractor.upf_result_stats(
+            doc, 1, '', log, declared_engine='symk')
+        other = SolverStatsExtractor.upf_result_stats(
+            doc, 1, '', log, declared_engine='symk-opt')
+        assert vouched['verdict_reason'] == 'exhausted-declared'
+        assert other['verdict_reason'] == 'unverified-search'
+
+
 class TestEnhsp:
 
     CMD = ['enhsp', '-o', 'd.pddl', '-f', 'p.pddl', '-planner', 'opt-hrmax',

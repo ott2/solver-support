@@ -113,7 +113,10 @@ solvers:
         description: anytime satisficing portfolio, keeps improving its plan
 
   symk:
-    # SymK is a Fast Downward fork with the same driver and output.
+    # SymK is a Fast Downward fork with the same driver and output. No SymK
+    # search has been checked for soundness (docs/unsat-soundness.md), so one
+    # that runs out of states reads as `unknown` (`unverified-search`). A tune
+    # you trust can vouch for its own search with `proves-unsat: true`.
     default_model: pddl
     solver_type: fd
     command: symk

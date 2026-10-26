@@ -2,13 +2,13 @@
 
 A planner that runs out of states without finding a plan prints a line like
 Fast Downward's `Completely explored state space -- no solution!` or ENHSP's
-`Problem unsolvable`. `fd_verdict` and `enhsp_verdict` read that line as
-`unsat` / `exhausted`, a proof that the task has no plan, only when the search
-that ran is on an **allowlist** of configurations whose soundness has been
-checked. Every other exhaustion is `unknown` / `unverified-search`, or
-`unsafe-pruning` where the configuration is known to be unsound. This note
-records why the list is what it is, and what checking it took, so it can be
-widened later one component at a time.
+`Problem unsolvable` (SymK's is a final infinite `BOUND`). `fd_verdict` and
+`enhsp_verdict` read that ending as `unsat` / `exhausted`, a proof that the
+task has no plan, only when the search that ran is on an **allowlist** of
+configurations whose soundness has been checked. Every other exhaustion is
+`unknown` / `unverified-search`, or `unsafe-pruning` where the configuration is
+known to be unsound. This note records why the list is what it is, and what
+checking it took, so it can be widened later one component at a time.
 
 Two things are kept separate here. The *verdict* says what the search showed.
 Turning it into a run-level `unsat` still needs the registry's `proves-unsat`
@@ -176,6 +176,45 @@ exits 0 without a plan as `UNSOLVABLE_PROVEN`. Their configurations:
 
 A UPF result file needs `engine_command` for any of these to be read at all.
 
+## SymK
+
+**Not checked. No SymK search is on the allowlist.** SymK is a Fast Downward
+fork with the same driver, but its symbolic searches (`sym_fw`, `sym_bw`,
+`sym_bd` and the rest) print no exhaustion line. A search that runs out of
+states ends with a `BOUND: L < U` line where both are infinity
+(`2147483647`). `fd_verdict` reads that as exhaustion and judges it as it
+judges Fast Downward's: the logged search's calls must be on the allowlist,
+and no `sym_*` call is. So a SymK exhaustion is `unknown` /
+`unverified-search` unless a tune declares it (`exhausted-declared`), and a
+final `L ≥ U` with `U` finite is `bounded`. Before issue #9 every SymK
+exhaustion read `unsat` / `exhausted`.
+
+A check would start from SymK `4e000d8a0` (2026-05-28). These are pointers,
+not findings:
+
+- **The ending.** `UniformCostSearch::prepareBucket` sets the lower bound to
+  infinity when `provable_no_more_plans()`, which is `open_list.empty()`
+  (`src/search/symbolic/searches/uniform_cost_search.cc:78-86`), and
+  `SymbolicSearch` then stops (`search_algorithms/symbolic_search.cc`). So the
+  question, as for any search, is what was removed before the open list
+  emptied.
+- **Mutex pruning.** `mutex_type` defaults to `MUTEX_EDELETION`
+  (`sym_parameters.cc:83-84`), restricting state sets with mutexes built from
+  the task's mutex groups (`sym_mutexes.cc`). This is sound only if it removes
+  nothing but unreachable states.
+- **Pruning between directions.** A bidirectional bucket drops every state
+  closed in the opposite direction (`uniform_cost_search.cc:73-74`), and
+  `non_stop` exists to keep backward search from ending once the initial
+  state is closed (`sym_parameters.cc:105-108`).
+- **Axioms and conditional effects.** Derived predicates are compiled into
+  BDDs (`sym_axiom/sym_axiom_compilation.cc`); conditional effects have their
+  own transition type (`ce_transition_type`).
+- **Size and time limits.** `max_tr_size`, `max_mutex_size`,
+  `max_aux_nodes`, `max_alloted_time` and the rest (`sym_parameters.cc:80-104`):
+  does hitting one only change the schedule, or drop states?
+- **Other engines.** `top_q_symbolic_uniform_cost_search.cc` prints `BOUND`
+  lines too, so its endings are read the same way.
+
 ## Declared by the registry
 
 A consumer that knows a search is sound without the library having checked it
@@ -204,7 +243,8 @@ the config's. The rules (`ModelRegistry.get_declaring_tune`):
   `--evaluator`/`--heuristic`/`--landmarks` predefinition. For ENHSP, which
   logs no configuration, the run's argv must equal the one the tune builds
   with no `--options`. For UPF, the tune's `fd_search` is compared with the
-  logged search, or, for ENHSP, the tune's engine with the file's `engine`.
+  logged search. A tune that passes none (ENHSP, or a `symk` engine) is
+  compared by its engine with the file's `engine`.
 - **It never overrides what the run shows.** It turns only
   `unverified-search` into a proof. A bound, an evaluator known to prune
   unsafely on the task, helpful actions, anytime mode, a limit, a crash or a
@@ -217,9 +257,9 @@ library's.
 
 To add a component, check what it removes against the table under "The
 principle", in the planner's own code, and record the evidence here. Then add
-it to `_FD_VERIFIED_CALLS` or `_ENHSP_VERIFIED_SEARCHES` (or the ENHSP
-configuration check), with a test that runs the real log under the new
-configuration.
+it to `_FD_VERIFIED_CALLS` (which SymK's searches share) or
+`_ENHSP_VERIFIED_SEARCHES` (or the ENHSP configuration check), with a test
+that runs the real log under the new configuration.
 
 *Citations:* the citations here come from memory and have not been checked
 against the published versions. Confirm them before using them anywhere

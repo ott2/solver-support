@@ -308,7 +308,10 @@ where the code is ambiguous, into the same vocabulary as the Savile Row verdict.
   `Generating unsolvable task` lands here too, since the search then exhausts a
   trivially false goal.
 - SymK prints no exhaustion line. Its last `BOUND: L < U` line, with `L ≥ U`, is
-  `exhausted` when `U` is infinity (`2147483647`) and `bounded` otherwise.
+  `bounded` when `U` is finite. When `U` is infinity (`2147483647`) the search
+  ran out of states, and that is judged exactly as Fast Downward's line is. No
+  SymK search is on the allowlist yet, so it is `unverified-search` unless a
+  tune declares it (`exhausted-declared`).
 - A portfolio's 12 is always `portfolio`. It can mask its components'
   time-outs, and its exhaustion line may come from a component that pruned
   unsafely.
@@ -347,7 +350,7 @@ does show the pruning half, and `fd_verdict` checks it as 26.6 does:
 Any such evaluator gives `unknown`/`unsafe-pruning`. From 26.6 the planner
 checks it itself (upstream issue1201): a safe exhaustion exits 11 and an unsafe
 one exits 12 with no exhaustion line. So `exhausted` only ever comes from older
-planners and SymK. The registry's `proves-unsat`, which a tune preset can
+planners. The registry's `proves-unsat`, which a tune preset can
 switch off, still decides whether `exhausted` becomes a run-level `unsat`.
 
 **The planner's own time limit is a timeout.** `search-limit` and
