@@ -20,7 +20,7 @@ name = "solver-support"
 # escape hatch for a version that genuinely cannot be known without building.
 # Ours can. Carrying a `.devN` suffix between releases keeps the working tree
 # from claiming a version that is already tagged and published.
-version = "0.6.1"
+version = "0.6.2.dev0"
 description = "Generic Conjure / Savile Row / Fast Downward / SymK / ENHSP / UPF solver pipeline"
 readme = "README.md"
 requires-python = ">=3.9"
